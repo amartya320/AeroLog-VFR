@@ -14,6 +14,8 @@ import {
   Calendar,
   Trash2,
   Hash,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import {
   ALTITUDE_LEVELS,
@@ -29,6 +31,7 @@ import {
   getCurrentIstDateTime,
 } from './utils/navlogMath';
 import { PRESET_ROUTES } from './utils/presetRoutes';
+import { fetchUpperAirWindsBatchClient } from './utils/weatherClient';
 import { RouteMap } from './components/RouteMap';
 import { NavLogTable } from './components/NavLogTable';
 import { WaypointManager } from './components/WaypointManager';
@@ -37,14 +40,6 @@ import { AlternatePlanner } from './components/AlternatePlanner';
 import { EditableNumberInput } from './components/EditableNumberInput';
 
 export default function App() {
-  const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState(false);
-
-  useEffect(() => {
-    const handleQuota = () => setGmpQuotaExceeded(true);
-    window.addEventListener('gmp-quota-exceeded', handleQuota);
-    return () => window.removeEventListener('gmp-quota-exceeded', handleQuota);
-  }, []);
-
   const [activePresetId, setActivePresetId] = useState<string>(PRESET_ROUTES[0].id);
   const [config, setConfig] = useState<FlightConfig>(() => {
     const ist = getCurrentIstDateTime();
@@ -64,6 +59,27 @@ export default function App() {
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
     'Upper-air winds synced via Open-Meteo ECMWF IFS for 5,000 ft (850 hPa)'
   );
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aerolog_dark_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('aerolog_dark_mode', String(darkMode));
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+  }, [darkMode]);
 
   // Compute NavLog summary, legs, alternate leg, and fuel breakdown reactively
   const navLogSummary = useMemo(
@@ -110,30 +126,13 @@ export default function App() {
             : []),
         ];
 
-        const res = await fetch('/api/winds', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            altitudeFt,
-            departureDate,
-            departureTime,
-            windModel,
-            points: pointsPayload,
-          }),
+        const data = await fetchUpperAirWindsBatchClient({
+          altitudeFt,
+          departureDate,
+          departureTime,
+          windModel,
+          points: pointsPayload,
         });
-        if (!res.ok) throw new Error('Wind API error');
-        const data = (await res.json()) as {
-          altitudeFt: number;
-          departureDate: string;
-          departureTime: string;
-          level: { pressureHpa: number; altitudeFt: number };
-          winds: Array<{
-            id: string;
-            windDir: number;
-            windSpd: number;
-            source: string;
-          }>;
-        };
 
         const windMap = new Map(data.winds.map((w) => [w.id, w]));
         setWaypoints((prev) =>
@@ -581,24 +580,6 @@ export default function App() {
 
   return (
     <div id="top" className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden">
-      {/* Google Maps Platform Quota Exceeded Banner (Required Tier 1/2 Defense) */}
-      {gmpQuotaExceeded && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
-          <span>
-            Google Maps Platform quota reached. If you are the app owner, visit{' '}
-            <a
-              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-semibold text-amber-950 hover:text-amber-800"
-            >
-              maps developer site
-            </a>{' '}
-            for instructions to update your account.
-          </span>
-        </div>
-      )}
-
       {/* Top Navigation Bar (Strict 3-Zone Contract + Mobile Section Jump Strip) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3 no-print shadow-2xs">
         <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-8">
@@ -654,12 +635,46 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: 1 primary action */}
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Zone 3: Dark Mode Toggle + Primary Export Action */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <button
+              id="dark-mode-toggle"
+              type="button"
+              onClick={() => setDarkMode((prev) => !prev)}
+              aria-label={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              aria-pressed={darkMode}
+              title={
+                darkMode
+                  ? 'Switch to Daylight Kneeboard (Light Mode)'
+                  : 'Switch to Cockpit Night View (Dark Mode)'
+              }
+              className={`px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                darkMode
+                  ? 'bg-amber-500/20 border-amber-400/50 text-amber-300 hover:bg-amber-500/30'
+                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {darkMode ? (
+                <>
+                  <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Light Mode</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-3.5 h-3.5 text-slate-700 shrink-0" />
+                  <span>Dark Mode</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={handleDownloadCsv}
-              className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                darkMode
+                  ? 'bg-sky-600 text-white hover:bg-sky-500'
+                  : 'bg-slate-900 text-white hover:bg-slate-800'
+              }`}
             >
               <Download className="w-3.5 h-3.5" />
               <span>

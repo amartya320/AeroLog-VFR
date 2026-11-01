@@ -1,3 +1,4 @@
+/// <reference types="google.maps" />
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Navigation,

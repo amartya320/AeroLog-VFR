@@ -23,6 +23,10 @@ import {
   getClosestAltitudeLevel,
   solveWindTriangle,
 } from '../utils/navlogMath';
+import {
+  fetchWeatherGridClient,
+  generateInitialSynopticGrid,
+} from '../utils/weatherClient';
 
 export type WeatherMapLayerId = 'wind-streamlines' | 'temp-isa' | 'clouds-precip';
 
@@ -172,10 +176,6 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
   const [activeLayer, setActiveLayer] = useState<WeatherMapLayerId>('wind-streamlines');
   const [animateStreamlines, setAnimateStreamlines] = useState<boolean>(true);
   const [showWindBarbs, setShowWindBarbs] = useState<boolean>(true);
-  const [gridNodes, setGridNodes] = useState<WeatherGridNode[]>([]);
-  const [gridSource, setGridSource] = useState<string>('Open-Meteo Upper-Air Grid');
-  const [isLoadingGrid, setIsLoadingGrid] = useState<boolean>(false);
-
   const initialBounds = useMemo(
     () => computeRouteWeatherBounds(waypoints, alternate),
     [waypoints, alternate]
@@ -190,6 +190,27 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
     lat: Math.max(1.2, initialBounds.maxLat - initialBounds.minLat),
     lng: Math.max(1.6, initialBounds.maxLng - initialBounds.minLng),
   });
+
+  const initialSynoptic = useMemo(
+    () =>
+      generateInitialSynopticGrid({
+        minLat: initialBounds.centerLat - Math.max(1.2, initialBounds.maxLat - initialBounds.minLat) * 0.65,
+        maxLat: initialBounds.centerLat + Math.max(1.2, initialBounds.maxLat - initialBounds.minLat) * 0.65,
+        minLng: initialBounds.centerLng - Math.max(1.6, initialBounds.maxLng - initialBounds.minLng) * 0.65,
+        maxLng: initialBounds.centerLng + Math.max(1.6, initialBounds.maxLng - initialBounds.minLng) * 0.65,
+        rows: 5,
+        cols: 5,
+        altitudeFt: selectedAltitudeFt,
+        departureDate,
+        departureTime,
+        windModel,
+      }),
+    []
+  );
+
+  const [gridNodes, setGridNodes] = useState<WeatherGridNode[]>(initialSynoptic.nodes);
+  const [gridSource, setGridSource] = useState<string>(initialSynoptic.source);
+  const [isLoadingGrid, setIsLoadingGrid] = useState<boolean>(false);
 
   // Sync camera bounds when route changes
   useEffect(() => {
@@ -220,39 +241,36 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
     [selectedAltitudeFt]
   );
 
-  // Fetch 5x5 Open-Meteo upper-air weather grid whenever route bounds, altitude, date/time, or windModel changes
+  // Fetch 5x5 Open-Meteo upper-air weather grid directly in browser whenever route bounds, altitude, date/time, or windModel changes
   useEffect(() => {
     let cancelled = false;
+    const gridParams = {
+      minLat: viewCenter.lat - viewSpan.lat * 0.65,
+      maxLat: viewCenter.lat + viewSpan.lat * 0.65,
+      minLng: viewCenter.lng - viewSpan.lng * 0.65,
+      maxLng: viewCenter.lng + viewSpan.lng * 0.65,
+      rows: 5,
+      cols: 5,
+      altitudeFt: selectedAltitudeFt,
+      departureDate,
+      departureTime,
+      windModel,
+    };
+
     const fetchGrid = async () => {
       setIsLoadingGrid(true);
       try {
-        const res = await fetch('/api/weather-grid', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            minLat: viewCenter.lat - viewSpan.lat * 0.65,
-            maxLat: viewCenter.lat + viewSpan.lat * 0.65,
-            minLng: viewCenter.lng - viewSpan.lng * 0.65,
-            maxLng: viewCenter.lng + viewSpan.lng * 0.65,
-            rows: 5,
-            cols: 5,
-            altitudeFt: selectedAltitudeFt,
-            departureDate,
-            departureTime,
-            windModel,
-          }),
-        });
-        if (!res.ok) throw new Error('Weather grid request failed');
-        const data = (await res.json()) as {
-          source: string;
-          nodes: WeatherGridNode[];
-        };
-        if (!cancelled && Array.isArray(data.nodes)) {
+        const data = await fetchWeatherGridClient(gridParams);
+        if (!cancelled && Array.isArray(data.nodes) && data.nodes.length > 0) {
           setGridNodes(data.nodes);
           setGridSource(data.source || 'Open-Meteo Free Upper-Air Grid');
         }
       } catch {
-        // Keep existing or fallback nodes
+        const fallback = generateInitialSynopticGrid(gridParams);
+        if (!cancelled) {
+          setGridNodes(fallback.nodes);
+          setGridSource(fallback.source);
+        }
       } finally {
         if (!cancelled) setIsLoadingGrid(false);
       }

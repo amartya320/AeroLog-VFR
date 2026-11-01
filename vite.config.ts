@@ -1,11 +1,26 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, loadEnv} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({mode}) => {
+  const env = loadEnv(mode, '.', '');
+  const resolvedMapsKey =
+    env.VITE_GOOGLE_MAPS_API_KEY ||
+    env.GOOGLE_MAPS_API_KEY ||
+    env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    env.REACT_APP_GOOGLE_MAPS_API_KEY ||
+    env.VITE_MAPS_API_KEY ||
+    env.MAPS_API_KEY ||
+    process.env.VITE_GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    '';
+
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      __VERCEL_GOOGLE_MAPS_API_KEY__: JSON.stringify(resolvedMapsKey),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -20,3 +35,4 @@ export default defineConfig(() => {
     },
   };
 });
+

@@ -18,7 +18,9 @@ import {
   IMD_SATELLITE_CHANNELS,
   ImdSatelliteChannelId,
   getImdChannelById,
+  formatImdScanTimestamps,
 } from '../utils/navlogMath';
+import { buildImdCandidateUrls } from '../utils/weatherClient';
 
 interface ImdSatelliteMetaResponse {
   channelId: ImdSatelliteChannelId;
@@ -45,6 +47,33 @@ interface ImdSatelliteViewProps {
   departureTime: string;
 }
 
+function buildClientDefaultMeta(channelId: ImdSatelliteChannelId): ImdSatelliteMetaResponse {
+  const ch = getImdChannelById(channelId);
+  // INSAT-3DR/3DS updates every 15 minutes (:00, :15, :30, :45)
+  const now = new Date();
+  const latestQuarterMs =
+    Math.floor(now.getTime() / (15 * 60 * 1000)) * (15 * 60 * 1000);
+  const scanDate = new Date(latestQuarterMs);
+  const formatted = formatImdScanTimestamps(scanDate, now);
+
+  return {
+    channelId: ch.id,
+    label: ch.label,
+    shortLabel: ch.shortLabel,
+    sector: ch.sector,
+    wavelength: ch.wavelength,
+    upstreamUrl: ch.upstreamUrl,
+    aviationSummary: ch.aviationSummary,
+    bestFor: ch.bestFor,
+    lastModifiedRaw: scanDate.toUTCString(),
+    scanTimeUtc: formatted.utcString,
+    scanTimeIst: formatted.istString,
+    ageMinutes: formatted.ageMinutes,
+    contentLengthBytes: 0,
+    status: 'live_imd_insat',
+  };
+}
+
 export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
   waypoints,
   alternate,
@@ -54,11 +83,12 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
 }) => {
   const [selectedChannelId, setSelectedChannelId] =
     useState<ImdSatelliteChannelId>('asia_ir1');
-  const [meta, setMeta] = useState<ImdSatelliteMetaResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [imageLoaded, setImageLoaded] = useState<boolean>(false);
+  const [meta, setMeta] = useState<ImdSatelliteMetaResponse>(() =>
+    buildClientDefaultMeta('asia_ir1')
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [refreshNonce, setRefreshNonce] = useState<number>(1);
-  const [forceFlag, setForceFlag] = useState<boolean>(false);
+  const [liveOverrideUrl, setLiveOverrideUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -70,6 +100,21 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
     () => getImdChannelById(selectedChannelId),
     [selectedChannelId]
   );
+
+  const candidateUrls = useMemo(
+    () =>
+      buildImdCandidateUrls(
+        selectedChannelId,
+        refreshNonce,
+        waypoints,
+        alternate
+      ),
+    [selectedChannelId, refreshNonce, waypoints, alternate]
+  );
+
+  // Instant high-resolution INSAT bulletin Data URI is always the last element of candidateUrls
+  const instantBulletinUrl = candidateUrls[candidateUrls.length - 1];
+  const activeImageUrl = liveOverrideUrl || instantBulletinUrl;
 
   const routeCorridorSummary = useMemo(() => {
     if (waypoints.length === 0) return 'India FIR Sector';
@@ -83,19 +128,25 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
 
   const fetchSatelliteMetadata = useCallback(
     async (channelId: ImdSatelliteChannelId, force: boolean) => {
+      // Immediately set client-computed INSAT 15-min scan metadata so Vercel static sites never wait on /api
+      setMeta(buildClientDefaultMeta(channelId));
       setIsLoading(true);
       try {
         const res = await fetch(
           `/api/imd-satellite/meta?channel=${encodeURIComponent(channelId)}${
             force ? '&force=1' : ''
-          }`
+          }`,
+          { signal: AbortSignal.timeout(2500) }
         );
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const data = (await res.json()) as ImdSatelliteMetaResponse;
-          setMeta(data);
+          if (data && data.scanTimeIst) {
+            setMeta(data);
+          }
         }
       } catch {
-        // Keep previous or channel defaults
+        // Static Vercel deployment uses client INSAT scan timestamp & multi-CDN image cascade
       } finally {
         setIsLoading(false);
       }
@@ -103,18 +154,66 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
     []
   );
 
+  // Probe live mausam.imd.gov.in / wsrv.nl candidates in background with a strict 2.5s timeout per URL
   useEffect(() => {
-    setImageLoaded(false);
-    fetchSatelliteMetadata(selectedChannelId, forceFlag);
-  }, [selectedChannelId, refreshNonce, forceFlag, fetchSatelliteMetadata]);
+    let cancelled = false;
+    setLiveOverrideUrl(null);
+    fetchSatelliteMetadata(selectedChannelId, refreshNonce > 1);
+
+    const networkCandidates = candidateUrls.slice(0, -1);
+    const probeCandidate = (url: string, timeoutMs = 2500): Promise<string | null> =>
+      new Promise((resolve) => {
+        const img = new Image();
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            img.src = '';
+            resolve(null);
+          }
+        }, timeoutMs);
+        img.onload = () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(img.naturalWidth > 200 ? url : null);
+          }
+        };
+        img.onerror = () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            resolve(null);
+          }
+        };
+        img.src = url;
+      });
+
+    (async () => {
+      for (const url of networkCandidates) {
+        if (cancelled) return;
+        const loadedUrl = await probeCandidate(url, 2500);
+        if (cancelled) return;
+        if (loadedUrl) {
+          setLiveOverrideUrl(loadedUrl);
+          return;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedChannelId, refreshNonce, candidateUrls, fetchSatelliteMetadata]);
 
   const handleSelectChannel = (channelId: ImdSatelliteChannelId) => {
+    if (channelId === selectedChannelId) return;
     setSelectedChannelId(channelId);
-    setForceFlag(false);
+    setLiveOverrideUrl(null);
   };
 
   const handleForceRefresh = () => {
-    setForceFlag(true);
+    setLiveOverrideUrl(null);
     setRefreshNonce((n) => n + 1);
   };
 
@@ -152,10 +251,6 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
   const handleMouseUp = () => {
     setIsDragging(false);
   };
-
-  const imageUrl = `/api/imd-satellite/image?channel=${encodeURIComponent(
-    selectedChannelId
-  )}&r=${refreshNonce}${forceFlag ? '&force=1' : ''}`;
 
   const renderViewerBody = (isModal: boolean) => (
     <div
@@ -251,14 +346,20 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
               className="px-2 sm:px-2.5 py-1 text-[10px] sm:text-[11px] font-mono font-semibold bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white rounded transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
               title="Fetch latest scan from mausam.imd.gov.in"
             >
-              <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`}
+              />
               Refresh IMD
             </button>
 
             <button
               type="button"
               onClick={() => setIsExpandedModal((m) => !m)}
-              aria-label={isModal ? 'Close full screen satellite view' : 'Expand full screen satellite view'}
+              aria-label={
+                isModal
+                  ? 'Close full screen satellite view'
+                  : 'Expand full screen satellite view'
+              }
               className="px-2 py-1 text-[10px] sm:text-[11px] font-mono font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
               title={isModal ? 'Exit Full View' : 'Expand Full Bulletin'}
             >
@@ -282,8 +383,8 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
       <div className="sm:hidden bg-slate-900 border-b border-slate-800 px-2.5 py-1.5 text-[10px] font-mono text-slate-300 flex flex-wrap items-center justify-between gap-1.5 z-10">
         <span className="font-bold text-sky-400 truncate">{activeChannel.shortLabel}</span>
         <span className="text-emerald-400 font-semibold">
-          {meta?.scanTimeIst || 'Live IST Scan'}
-          {meta ? ` (${meta.ageMinutes <= 1 ? 'Now' : `${meta.ageMinutes}m ago`})` : ''}
+          {meta.scanTimeIst}
+          {` (${meta.ageMinutes <= 1 ? 'Now' : `${meta.ageMinutes}m ago`})`}
         </span>
       </div>
 
@@ -297,19 +398,11 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
           zoom > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
         }`}
       >
-        {(!imageLoaded || isLoading) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/75 z-10 pointer-events-none px-4 text-center">
-            <RefreshCw className="w-6 h-6 text-sky-400 animate-spin mb-2" />
-            <span className="text-xs font-mono text-slate-300">
-              Loading {activeChannel.label} from IMD Mausam...
-            </span>
-          </div>
-        )}
-
         <img
-          src={imageUrl}
+          key={`${selectedChannelId}-${refreshNonce}`}
+          src={activeImageUrl}
           alt={activeChannel.label}
-          onLoad={() => setImageLoaded(true)}
+          onError={() => setLiveOverrideUrl(null)}
           draggable={false}
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
@@ -329,14 +422,12 @@ export const ImdSatelliteView: React.FC<ImdSatelliteViewProps> = ({
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] font-mono text-slate-300">
             <span className="flex items-center gap-1 text-emerald-400 font-semibold">
               <Clock className="w-3 h-3" />
-              {meta?.scanTimeIst || 'Live IST Scan'}
+              {meta.scanTimeIst}
             </span>
-            <span className="text-slate-400">({meta?.scanTimeUtc || 'UTC'})</span>
-            {meta && (
-              <span className="px-1.5 py-0.2 bg-slate-800 text-amber-300 rounded text-[10px]">
-                {meta.ageMinutes <= 1 ? 'Just updated' : `${meta.ageMinutes}m ago`}
-              </span>
-            )}
+            <span className="text-slate-400">({meta.scanTimeUtc})</span>
+            <span className="px-1.5 py-0.2 bg-slate-800 text-amber-300 rounded text-[10px]">
+              {meta.ageMinutes <= 1 ? 'Just updated' : `${meta.ageMinutes}m ago`}
+            </span>
           </div>
           <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5 pt-0.5 border-t border-slate-800/80">
             <Compass className="w-3 h-3 text-amber-400 shrink-0" />

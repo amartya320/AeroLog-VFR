@@ -396,6 +396,87 @@ test('getImdChannelById and formatImdScanTimestamps resolve IMD INSAT channels a
   assert.equal(formatted.ageMinutes, 25);
 });
 
+test('weatherClient helpers resolve Open-Meteo pressure levels, hourly timestamps, synoptic grids, and IMD multi-CDN candidate URLs for Vercel static builds', async () => {
+  const {
+    getOpenMeteoQueryHpa,
+    parseTargetDateTime,
+    resolveHourlyTimeIndex,
+    generateInitialSynopticGrid,
+    buildImdCandidateUrls,
+  } = await import('./weatherClient');
+
+  // Verify intermediate pressure levels (950, 900, 800 hPa) map cleanly to supported ECMWF/GFS levels
+  assert.equal(getOpenMeteoQueryHpa(1000), 1000);
+  assert.equal(getOpenMeteoQueryHpa(950), 925);
+  assert.equal(getOpenMeteoQueryHpa(925), 925);
+  assert.equal(getOpenMeteoQueryHpa(850), 850);
+  assert.equal(getOpenMeteoQueryHpa(700), 700);
+  assert.equal(getOpenMeteoQueryHpa(500), 500);
+
+  // Verify hourly time index matching when exact date is outside forecast window
+  const dt = parseTargetDateTime('2026-11-01', '06:15');
+  assert.equal(dt.roundedHour, 6);
+  const sampleTimes = [
+    '2025-05-10T05:00',
+    '2025-05-10T06:00',
+    '2025-05-11T06:00',
+    '2025-05-12T06:00',
+  ];
+  const resolved = resolveHourlyTimeIndex(sampleTimes, dt);
+  assert.equal(sampleTimes[resolved.index].endsWith('T06:00'), true);
+  assert.equal(resolved.isDateFallback, true);
+
+  // Verify initial 5x5 synoptic grid generation
+  const grid = generateInitialSynopticGrid({
+    minLat: 10.5,
+    maxLat: 12.5,
+    minLng: 75.5,
+    maxLng: 77.5,
+    rows: 5,
+    cols: 5,
+    altitudeFt: 5000,
+    departureDate: '2026-11-01',
+    departureTime: '06:00',
+    windModel: 'ecmwf_ifs025',
+  });
+  assert.equal(grid.nodes.length, 25);
+  assert.ok(grid.nodes[0].windSpd > 0);
+
+  // Verify IMD candidate URLs include wsrv.nl SSL/CORS proxy, direct mausam.imd.gov.in URL, and SVG data URI fallback
+  const urls = buildImdCandidateUrls('asia_ir1', 2, [
+    { id: 'w1', name: 'VOCL', lat: 11.1368, lng: 75.9553 },
+  ]);
+  assert.ok(urls.length >= 4);
+  assert.ok(urls[0].startsWith('https://wsrv.nl/?url='));
+  assert.ok(urls[1].startsWith('https://mausam.imd.gov.in/Satellite/3Dasiasec_ir1.jpg'));
+  assert.ok(urls[urls.length - 1].startsWith('data:image/svg+xml;utf8,'));
+});
+
+test('aviationMapUtils projects Web Mercator coordinates reversibly and searches Indian aerodromes', async () => {
+  const {
+    latLngToWorldPixel,
+    worldPixelToLatLng,
+    computeBestFitZoomAndCenter,
+    filterLocalAerodromes,
+  } = await import('./aviationMapUtils');
+
+  const px = latLngToWorldPixel(11.1368, 75.9553, 9);
+  const back = worldPixelToLatLng(px.x, px.y, 9);
+  assert.ok(Math.abs(back.lat - 11.1368) < 0.002);
+  assert.ok(Math.abs(back.lng - 75.9553) < 0.002);
+
+  const fit = computeBestFitZoomAndCenter([
+    { lat: 11.1368, lng: 75.9553 },
+    { lat: 12.23, lng: 76.6558 },
+  ]);
+  assert.ok(fit.zoom >= 6 && fit.zoom <= 11);
+
+  const matches = filterLocalAerodromes('VOCL');
+  assert.ok(matches.length >= 1);
+  assert.equal(matches[0].code, 'VOCL');
+});
+
+
 
 
 
