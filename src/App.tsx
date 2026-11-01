@@ -659,7 +659,7 @@ export default function App() {
               AeroLog VFR
             </a>
             <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 whitespace-nowrap">
-              vibecoded by{' '}
+              vibe coded with <span className="text-rose-500">♥</span> by{' '}
               <a
                 href="https://www.instagram.com/amartya320/"
                 target="_blank"
@@ -1348,7 +1348,7 @@ export default function App() {
           </span>
           <span className="text-slate-300">•</span>
           <span className="font-mono text-slate-700 font-medium">
-            vibecoded by{' '}
+            vibe coded with <span className="text-rose-500">♥</span> by{' '}
             <a
               href="https://www.instagram.com/amartya320/"
               target="_blank"

@@ -47,6 +47,8 @@ export const INDIAN_AERODROMES_AND_VFR_FIXES: AerodromeSearchItem[] = [
   { id: 'votp', code: 'VOTP', name: 'Tirupati Airport', region: 'Andhra Pradesh, India', lat: 13.6325, lng: 79.5433, elevationFt: 350 },
   { id: 'vohb', code: 'VOHB', name: 'Hubballi Airport (Hubli)', region: 'Karnataka, India', lat: 15.3617, lng: 75.0849, elevationFt: 2171 },
   { id: 'vobm', code: 'VOBM', name: 'Belagavi Airport (Belgaum)', region: 'Karnataka, India', lat: 15.8593, lng: 74.6183, elevationFt: 2489 },
+  { id: 'vogb', code: 'VOGB', name: 'Kalaburagi Airport (Gulbarga)', region: 'Karnataka, India', lat: 17.3056, lng: 76.9531, elevationFt: 1473 },
+  { id: 'vasl', code: 'VASL', name: 'Solapur Airport', region: 'Maharashtra, India', lat: 17.6280, lng: 75.9348, elevationFt: 1585 },
   { id: 'vokl', code: 'VOKL', name: 'Kalaburagi Airport (Gulbarga)', region: 'Karnataka, India', lat: 17.3056, lng: 76.9531, elevationFt: 1473 },
   // Popular VFR Reporting Points along South India Training Corridors
   { id: 'nilambur', code: 'NILAMBUR', name: 'Nilambur VFR Fix', region: 'Malappuram, Kerala', lat: 11.2789, lng: 76.2255, elevationFt: 150 },
