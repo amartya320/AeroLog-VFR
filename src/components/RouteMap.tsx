@@ -17,12 +17,15 @@ import {
   Navigation,
   Search,
   Satellite,
+  GitCommitHorizontal,
+  Waypoints,
 } from 'lucide-react';
 import {
   AlternateAerodrome,
   AlternateOriginMode,
   ComputedAlternate,
   ComputedLeg,
+  RouteTrackMode,
   Waypoint,
   WindModelId,
   WIND_MODEL_OPTIONS,
@@ -54,9 +57,13 @@ function getGoogleMapsApiKey(): string {
 
 const GOOGLE_MAPS_API_KEY = getGoogleMapsApiKey();
 
+export type MapClickActionMode = 'waypoint' | 'alternate';
+
 interface RouteMapProps {
   waypoints: Waypoint[];
   legs: ComputedLeg[];
+  routeTrackMode: RouteTrackMode;
+  onChangeRouteTrackMode: (mode: RouteTrackMode) => void;
   alternate: AlternateAerodrome | null;
   alternateFrom?: AlternateOriginMode;
   computedAlternate: ComputedAlternate | null;
@@ -68,6 +75,12 @@ interface RouteMapProps {
   selectedLegIndex: number;
   onSelectLeg: (index: number) => void;
   onAddWaypointFromMap: (lat: number, lng: number, suggestedName?: string) => void;
+  onSetEndpointFromMap?: (
+    role: 'DEP' | 'DEST',
+    lat: number,
+    lng: number,
+    suggestedName?: string
+  ) => void;
   onUpdateWaypointCoord: (id: string, lat: number, lng: number) => void;
   onUpdateAlternateCoord: (lat: number, lng: number, suggestedName?: string) => void;
   onRemoveWaypoint: (id: string) => void;
@@ -77,12 +90,13 @@ interface RouteMapProps {
 
 /**
  * Google Places Search Box inside the Map Toolbar so users can search any airport, city, or VFR landmark
- * and add it directly as a Route Waypoint or set it as the Alternate Aerodrome.
+ * and add it directly to the map route (1st = DEP, 2nd = DEST, 3rd+ = WPT on line) or as Alternate Aerodrome.
  */
 const PlacesSearchBox: React.FC<{
-  clickMode: 'waypoint' | 'alternate';
+  clickMode: MapClickActionMode;
+  waypointsCount: number;
   onPlaceChosen: (lat: number, lng: number, name: string) => void;
-}> = ({ clickMode, onPlaceChosen }) => {
+}> = ({ clickMode, waypointsCount, onPlaceChosen }) => {
   const placesLib = useMapsLibrary('places');
   const map = useMap();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -117,17 +131,22 @@ const PlacesSearchBox: React.FC<{
     };
   }, [placesLib, map, onPlaceChosen]);
 
+  const placeholderText =
+    clickMode === 'alternate'
+      ? 'Search Google Maps for Alternate...'
+      : waypointsCount === 0
+      ? 'Search map to set Departure (DEP)...'
+      : waypointsCount === 1
+      ? 'Search map to set Destination (DEST)...'
+      : 'Search map to add Waypoint...';
+
   return (
-    <div className="relative flex items-center flex-1 sm:flex-initial min-w-0 sm:min-w-[200px] lg:min-w-[240px]">
+    <div className="relative flex items-center flex-1 sm:flex-initial min-w-0 sm:min-w-[210px] lg:min-w-[250px]">
       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
       <input
         ref={inputRef}
         type="text"
-        placeholder={
-          clickMode === 'alternate'
-            ? 'Search Google Maps for Alternate...'
-            : 'Search airport / city to add WPT...'
-        }
+        placeholder={placeholderText}
         aria-label="Search Google Maps for airport or landmark"
         className="w-full pl-8 pr-2.5 py-1 text-xs bg-slate-50 border border-slate-300 rounded-md text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-sky-600 focus:outline-none"
       />
@@ -136,15 +155,23 @@ const PlacesSearchBox: React.FC<{
 };
 
 /**
- * Draws geodesic polylines for the main flight route AND a dashed magenta/purple line to the Alternate Aerodrome.
+ * Draws route polylines for the main flight route AND a dashed purple line to the Alternate Aerodrome.
+ * CRITICAL: All polylines have `clickable: false` so clicking or touching directly ON the straight-line
+ * track passes straight through to the Map `onClick` handler and adds a waypoint right on the track.
  */
 const RoutePolylines: React.FC<{
   waypoints: Waypoint[];
+  routeTrackMode: RouteTrackMode;
   alternate: AlternateAerodrome | null;
   alternateFrom: AlternateOriginMode;
   selectedLegIndex: number;
-  onSelectLeg: (index: number) => void;
-}> = ({ waypoints, alternate, alternateFrom, selectedLegIndex, onSelectLeg }) => {
+}> = ({
+  waypoints,
+  routeTrackMode,
+  alternate,
+  alternateFrom,
+  selectedLegIndex,
+}) => {
   const map = useMap();
   const mapsLib = useMapsLibrary('maps');
 
@@ -153,7 +180,27 @@ const RoutePolylines: React.FC<{
 
     const polylines: google.maps.Polyline[] = [];
 
-    // 1. Main Route Legs
+    // 0. If Straight-Line Track mode is active with 2+ waypoints, draw the master DEP -> DEST straight guide line
+    if (routeTrackMode === 'straight' && waypoints.length >= 2) {
+      const dep = waypoints[0];
+      const dest = waypoints[waypoints.length - 1];
+      const masterGuideLine = new mapsLib.Polyline({
+        path: [
+          { lat: dep.lat, lng: dep.lng },
+          { lat: dest.lat, lng: dest.lng },
+        ],
+        geodesic: false,
+        strokeColor: '#0ea5e9',
+        strokeOpacity: 0.35,
+        strokeWeight: 7,
+        zIndex: 3,
+        clickable: false,
+        map,
+      });
+      polylines.push(masterGuideLine);
+    }
+
+    // 1. Main Route Legs (clickable: false so clicking directly on the track line adds a waypoint!)
     if (waypoints.length >= 2) {
       for (let i = 0; i < waypoints.length - 1; i++) {
         const isSelected = i === selectedLegIndex;
@@ -165,16 +212,13 @@ const RoutePolylines: React.FC<{
             { lat: from.lat, lng: from.lng },
             { lat: to.lat, lng: to.lng },
           ],
-          geodesic: true,
+          geodesic: routeTrackMode !== 'straight',
           strokeColor: isSelected ? '#f59e0b' : '#38bdf8',
           strokeOpacity: 0.95,
           strokeWeight: isSelected ? 5 : 3.5,
           zIndex: isSelected ? 10 : 5,
+          clickable: false,
           map,
-        });
-
-        line.addListener('click', () => {
-          onSelectLeg(i);
         });
 
         polylines.push(line);
@@ -195,6 +239,7 @@ const RoutePolylines: React.FC<{
         ],
         geodesic: true,
         strokeOpacity: 0,
+        clickable: false,
         icons: [
           {
             icon: {
@@ -217,7 +262,15 @@ const RoutePolylines: React.FC<{
     return () => {
       polylines.forEach((p) => p.setMap(null));
     };
-  }, [map, mapsLib, waypoints, alternate, alternateFrom, selectedLegIndex, onSelectLeg]);
+  }, [
+    map,
+    mapsLib,
+    waypoints,
+    routeTrackMode,
+    alternate,
+    alternateFrom,
+    selectedLegIndex,
+  ]);
 
   return null;
 };
@@ -228,21 +281,25 @@ const FitBoundsHelper: React.FC<{
   triggerFit: number;
 }> = ({ waypoints, alternate, triggerFit }) => {
   const map = useMap();
-
-  // Create a signature of waypoint coordinates so selecting a preset route automatically fits bounds
-  const routeSignature =
-    waypoints.map((w) => `${w.id}:${w.lat.toFixed(2)},${w.lng.toFixed(2)}`).join('|') +
-    (alternate ? `|ALT:${alternate.lat.toFixed(2)},${alternate.lng.toFixed(2)}` : '');
+  const lastFitTriggerRef = useRef<number>(-1);
 
   useEffect(() => {
     if (!map || waypoints.length === 0) return;
+    if (lastFitTriggerRef.current === triggerFit) return;
+    lastFitTriggerRef.current = triggerFit;
+
+    if (waypoints.length === 1 && !alternate) {
+      map.panTo({ lat: waypoints[0].lat, lng: waypoints[0].lng });
+      return;
+    }
+
     const bounds = new google.maps.LatLngBounds();
     waypoints.forEach((wp) => bounds.extend({ lat: wp.lat, lng: wp.lng }));
     if (alternate) {
       bounds.extend({ lat: alternate.lat, lng: alternate.lng });
     }
     map.fitBounds(bounds, 55);
-  }, [map, triggerFit, routeSignature]);
+  }, [map, triggerFit, waypoints, alternate]);
 
   return null;
 };
@@ -250,6 +307,8 @@ const FitBoundsHelper: React.FC<{
 export const RouteMap: React.FC<RouteMapProps> = ({
   waypoints,
   legs,
+  routeTrackMode,
+  onChangeRouteTrackMode,
   alternate,
   alternateFrom = 'DEST',
   computedAlternate,
@@ -271,7 +330,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   const [mapTypeId, setMapTypeId] = useState<
     'hybrid' | 'satellite' | 'terrain' | 'roadmap'
   >('hybrid');
-  const [clickMode, setClickMode] = useState<'waypoint' | 'alternate'>('waypoint');
+  const [clickMode, setClickMode] = useState<MapClickActionMode>('waypoint');
   const [fitTrigger, setFitTrigger] = useState(0);
 
   const selectedLeg = legs[selectedLegIndex];
@@ -285,6 +344,27 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     waypoints.length > 0
       ? waypoints.reduce((acc, w) => acc + w.lng, 0) / waypoints.length
       : 79.0882;
+
+  const handleMapOrSearchCoord = (
+    lat: number,
+    lng: number,
+    suggestedName?: string
+  ) => {
+    if (clickMode === 'alternate') {
+      onUpdateAlternateCoord(lat, lng, suggestedName);
+    } else {
+      onAddWaypointFromMap(lat, lng, suggestedName);
+    }
+  };
+
+  const wptButtonLabel =
+    waypoints.length === 0
+      ? '+ Tap Map: Set DEP (1st)'
+      : waypoints.length === 1
+      ? '+ Tap Map: Set DEST (2nd)'
+      : routeTrackMode === 'straight'
+      ? '+ Tap Track/Map: Add WPT on Line'
+      : '+ Tap Map: Add WPT';
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col">
@@ -334,60 +414,98 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           </div>
 
           {viewMode === 'route' && (
-            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto">
-              {(
-                [
-                  { id: 'hybrid', label: 'Earth Hybrid' },
-                  { id: 'satellite', label: 'Satellite' },
-                  { id: 'terrain', label: 'Terrain' },
-                  { id: 'roadmap', label: 'Chart 2D' },
-                ] as const
-              ).map((mode) => (
+            <>
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto">
+                {(
+                  [
+                    { id: 'hybrid', label: 'Earth Hybrid' },
+                    { id: 'satellite', label: 'Satellite' },
+                    { id: 'terrain', label: 'Terrain' },
+                    { id: 'roadmap', label: 'Chart 2D' },
+                  ] as const
+                ).map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setMapTypeId(mode.id)}
+                    className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-medium rounded transition-colors text-center whitespace-nowrap ${
+                      mapTypeId === mode.id
+                        ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Straight-Line vs Freeform Track Toggle on Map Toolbar */}
+              <div
+                role="group"
+                aria-label="Map Track Mode"
+                className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto"
+              >
                 <button
-                  key={mode.id}
                   type="button"
-                  onClick={() => setMapTypeId(mode.id)}
-                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-medium rounded transition-colors text-center whitespace-nowrap ${
-                    mapTypeId === mode.id
-                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                  aria-pressed={routeTrackMode === 'straight'}
+                  onClick={() => onChangeRouteTrackMode('straight')}
+                  title="Intermediate waypoints stick directly to the straight line between Departure and Destination"
+                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                    routeTrackMode === 'straight'
+                      ? 'bg-sky-700 text-white'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {mode.label}
+                  <GitCommitHorizontal className="w-3 h-3 shrink-0" />
+                  Straight-Line
                 </button>
-              ))}
-            </div>
+                <button
+                  type="button"
+                  aria-pressed={routeTrackMode === 'freeform'}
+                  onClick={() => onChangeRouteTrackMode('freeform')}
+                  title="Freeform routing allows waypoints off the direct DEP-DEST line"
+                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                    routeTrackMode === 'freeform'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Waypoints className="w-3 h-3 shrink-0" />
+                  Freeform
+                </button>
+              </div>
+            </>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
           {viewMode === 'route' && (
             <>
-              {/* Click Mode Selector: Add Route Waypoint vs Set Alternate Aerodrome */}
-              <div className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto">
+              {/* Click Mode Selector: Route Waypoints vs Alternate */}
+              <div className="flex flex-wrap items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setClickMode('waypoint')}
-                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
                     clickMode === 'waypoint'
-                      ? 'bg-sky-700 text-white'
+                      ? 'bg-amber-600 text-white'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   <MapPin className="w-3 h-3 shrink-0" />
-                  + Click Map: Add WPT
+                  {wptButtonLabel}
                 </button>
                 <button
                   type="button"
                   onClick={() => setClickMode('alternate')}
-                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
                     clickMode === 'alternate'
                       ? 'bg-purple-700 text-white'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   <Navigation className="w-3 h-3 shrink-0" />
-                  Click Map: Set Alternate
+                  Set Alternate
                 </button>
               </div>
 
@@ -445,12 +563,9 @@ export const RouteMap: React.FC<RouteMapProps> = ({
             <div className="absolute top-2.5 left-2.5 right-2.5 sm:right-auto z-10 bg-white/95 backdrop-blur-xs p-1.5 rounded-md shadow-md border border-slate-200 flex items-center gap-2 max-w-full sm:max-w-xs">
               <PlacesSearchBox
                 clickMode={clickMode}
+                waypointsCount={waypoints.length}
                 onPlaceChosen={(lat, lng, name) => {
-                  if (clickMode === 'alternate') {
-                    onUpdateAlternateCoord(lat, lng, name);
-                  } else {
-                    onAddWaypointFromMap(lat, lng, name);
-                  }
+                  handleMapOrSearchCoord(lat, lng, name);
                 }}
               />
             </div>
@@ -469,11 +584,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                 if (!ev.detail.latLng) return;
                 const lat = Math.round(ev.detail.latLng.lat * 10000) / 10000;
                 const lng = Math.round(ev.detail.latLng.lng * 10000) / 10000;
-                if (clickMode === 'alternate') {
-                  onUpdateAlternateCoord(lat, lng);
-                } else {
-                  onAddWaypointFromMap(lat, lng);
-                }
+                handleMapOrSearchCoord(lat, lng);
               }}
             >
               <FitBoundsHelper
@@ -483,10 +594,10 @@ export const RouteMap: React.FC<RouteMapProps> = ({
               />
               <RoutePolylines
                 waypoints={waypoints}
+                routeTrackMode={routeTrackMode}
                 alternate={alternate}
                 alternateFrom={alternateFrom}
                 selectedLegIndex={selectedLegIndex}
-                onSelectLeg={onSelectLeg}
               />
 
               {/* Main Route Waypoint Markers */}
@@ -502,8 +613,11 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                     position={{ lat: wp.lat, lng: wp.lng }}
                     draggable={true}
                     onClick={() => {
-                      // Clicking a waypoint deletes it directly from the flight plan
-                      onRemoveWaypoint(wp.id);
+                      if (!isDep && !isDest) {
+                        onRemoveWaypoint(wp.id);
+                      } else {
+                        onSelectLeg(isDep ? 0 : Math.max(0, waypoints.length - 2));
+                      }
                     }}
                     onDragEnd={(e) => {
                       if (!e.latLng) return;
@@ -511,19 +625,23 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                       const lng = Math.round(e.latLng.lng() * 10000) / 10000;
                       onUpdateWaypointCoord(wp.id, lat, lng);
                     }}
-                    title={`${wp.name} (${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}) — Click to delete waypoint, or drag to move`}
+                    title={
+                      isDep || isDest
+                        ? `${isDep ? 'DEPARTURE' : 'DESTINATION'}: ${wp.name} (${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}) — Drag to move`
+                        : `${wp.name} (${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}) — Drag ${routeTrackMode === 'straight' ? 'along straight line' : 'to move'}, or click to remove`
+                    }
                   >
                     <Pin
                       background={bg}
                       borderColor={borderColor}
                       glyphColor="#ffffff"
-                      glyph={String(index + 1)}
+                      glyph={isDep ? 'D' : isDest ? 'A' : String(index)}
                     />
                   </AdvancedMarker>
                 );
               })}
 
-              {/* Alternate Aerodrome Marker (Purple Pin 'A') */}
+              {/* Alternate Aerodrome Marker (Purple Pin 'ALT') */}
               {alternate && (
                 <AdvancedMarker
                   position={{ lat: alternate.lat, lng: alternate.lng }}
@@ -540,7 +658,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                     background="#9333ea"
                     borderColor="#6b21a8"
                     glyphColor="#ffffff"
-                    glyph="A"
+                    glyph="ALT"
                   />
                 </AdvancedMarker>
               )}
@@ -609,11 +727,13 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           </div>
         ) : (
           <span className="text-slate-500">
-            Click anywhere on the map or search above to add route waypoints.
+            Select Departure & Destination or click on the map to add route waypoints.
           </span>
         )}
         <span className="text-slate-500 hidden xl:inline">
-          Click a pin to delete · Drag pins to reposition · Dashed purple line = Alternate route
+          {routeTrackMode === 'straight'
+            ? 'Straight-Line Mode: En-route waypoints stick to DEP→DEST line · Drag pins along line'
+            : 'Freeform Mode: Drag pins anywhere · Click en-route pin to remove'}
         </span>
       </div>
     </div>

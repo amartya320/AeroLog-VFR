@@ -1,8 +1,13 @@
+export type RouteTrackMode = 'straight' | 'freeform';
+
 export interface Waypoint {
   id: string;
   name: string;
   lat: number;
   lng: number;
+  freeformLat?: number; // Original freeform latitude before snapping to straight line
+  freeformLng?: number; // Original freeform longitude before snapping to straight line
+  lineFraction?: number; // Fractional position t in [0, 1] along DEP -> DEST straight line
   elevationFt?: number;
   windDir?: number; // Degrees True (FROM which wind blows, 0-360)
   windSpd?: number; // Knots
@@ -78,6 +83,7 @@ export interface FlightConfig {
   alternateFrom?: AlternateOriginMode; // Where alternate leg data is calculated from: 'DEP' or 'DEST'
   customAlternateFuelLiters?: number | null; // Optional user-given custom alternate fuel (L)
   roundOffValues?: boolean; // Round off decimal values to nearest whole integer across all calculations
+  routeTrackMode?: RouteTrackMode; // 'straight' (waypoints stick to DEP->DEST straight line) or 'freeform'
 }
 
 export interface ComputedLeg {
@@ -279,6 +285,346 @@ export function calculateTrueTrackDeg(
     Math.sin(rLat1) * Math.cos(rLat2) * Math.cos(dLng);
   const brng = Math.atan2(y, x) * RAD_TO_DEG;
   return normalizeDegrees(brng);
+}
+
+export interface StraightLineProjection {
+  lat: number;
+  lng: number;
+  t: number; // Fractional progress along DEP -> DEST straight line (0 = DEP, 1 = DEST)
+  distanceFromDepNm: number;
+  totalLineDistanceNm: number;
+  crossTrackDistanceNm: number;
+}
+
+/**
+ * Interpolate a coordinate at a fractional position `fraction` (0..1) along the straight line
+ * drawn between `dep` and `dest`.
+ */
+export function interpolatePointAlongLine(
+  dep: { lat: number; lng: number },
+  dest: { lat: number; lng: number },
+  fraction: number,
+  clampMin = 0.02,
+  clampMax = 0.98
+): StraightLineProjection {
+  const safeT = Math.max(clampMin, Math.min(clampMax, isFinite(fraction) ? fraction : 0.5));
+  const lat = Math.round((dep.lat + safeT * (dest.lat - dep.lat)) * 10000) / 10000;
+  const lng = Math.round((dep.lng + safeT * (dest.lng - dep.lng)) * 10000) / 10000;
+  const totalLineDistanceNm = calculateDistanceNm(dep.lat, dep.lng, dest.lat, dest.lng);
+  const distanceFromDepNm = calculateDistanceNm(dep.lat, dep.lng, lat, lng);
+  return {
+    lat,
+    lng,
+    t: Math.round(safeT * 10000) / 10000,
+    distanceFromDepNm: Math.round(distanceFromDepNm * 10) / 10,
+    totalLineDistanceNm: Math.round(totalLineDistanceNm * 10) / 10,
+    crossTrackDistanceNm: 0,
+  };
+}
+
+/**
+ * Orthogonally project any coordinate `(lat, lng)` onto the straight line drawn between `dep` and `dest`.
+ * Returns the snapped `(lat, lng)` on the line, its fractional progress `t` in `[clampMin, clampMax]`,
+ * distance from departure in NM, and cross-track distance in NM.
+ */
+export function projectPointOntoStraightLine(
+  dep: { lat: number; lng: number },
+  dest: { lat: number; lng: number },
+  lat: number,
+  lng: number,
+  clampMin = 0.02,
+  clampMax = 0.98
+): StraightLineProjection {
+  const midLatRad = ((dep.lat + dest.lat) / 2) * DEG_TO_RAD;
+  const cosLat = Math.max(0.1, Math.cos(midLatRad));
+  const dx = (dest.lng - dep.lng) * cosLat;
+  const dy = dest.lat - dep.lat;
+  const lenSq = dx * dx + dy * dy;
+
+  let rawT = 0.5;
+  if (lenSq > 1e-10) {
+    const px = (lng - dep.lng) * cosLat;
+    const py = lat - dep.lat;
+    rawT = (px * dx + py * dy) / lenSq;
+  }
+
+  const t = Math.max(clampMin, Math.min(clampMax, rawT));
+  const snappedLat = Math.round((dep.lat + t * (dest.lat - dep.lat)) * 10000) / 10000;
+  const snappedLng = Math.round((dep.lng + t * (dest.lng - dep.lng)) * 10000) / 10000;
+  const totalLineDistanceNm = calculateDistanceNm(dep.lat, dep.lng, dest.lat, dest.lng);
+  const distanceFromDepNm = calculateDistanceNm(dep.lat, dep.lng, snappedLat, snappedLng);
+  const crossTrackDistanceNm = calculateDistanceNm(lat, lng, snappedLat, snappedLng);
+
+  return {
+    lat: snappedLat,
+    lng: snappedLng,
+    t: Math.round(t * 10000) / 10000,
+    distanceFromDepNm: Math.round(distanceFromDepNm * 10) / 10,
+    totalLineDistanceNm: Math.round(totalLineDistanceNm * 10) / 10,
+    crossTrackDistanceNm: Math.round(crossTrackDistanceNm * 10) / 10,
+  };
+}
+
+/**
+ * Snap all intermediate waypoints (`1 .. waypoints.length - 2`) onto the straight line drawn
+ * between Departure (`waypoints[0]`) and Destination (`waypoints[waypoints.length - 1]`),
+ * ordering them sequentially from Departure (`t = 0`) to Destination (`t = 1`).
+ */
+export function snapWaypointsToStraightLine(waypoints: Waypoint[]): Waypoint[] {
+  if (waypoints.length === 0) return [];
+  if (waypoints.length === 1) {
+    return [{ ...waypoints[0], lineFraction: 0 }];
+  }
+  const dep = { ...waypoints[0], lineFraction: 0 };
+  const dest = { ...waypoints[waypoints.length - 1], lineFraction: 1 };
+  if (waypoints.length === 2) {
+    return [dep, dest];
+  }
+
+  const intermediates = waypoints.slice(1, waypoints.length - 1);
+  const projected = intermediates.map((wp, idx) => {
+    const proj = projectPointOntoStraightLine(dep, dest, wp.lat, wp.lng, 0.03, 0.97);
+    return {
+      wp,
+      originalIdx: idx,
+      t: proj.t,
+    };
+  });
+
+  // Sort intermediate waypoints along the line from DEP (t=0) to DEST (t=1)
+  projected.sort((a, b) => {
+    if (Math.abs(a.t - b.t) > 1e-4) return a.t - b.t;
+    return a.originalIdx - b.originalIdx;
+  });
+
+  // Ensure distinct fractional positions if multiple waypoints were projected to the exact same spot
+  const n = projected.length;
+  for (let i = 1; i < n; i++) {
+    if (projected[i].t - projected[i - 1].t < 0.015) {
+      projected[i].t = Math.min(0.97, projected[i - 1].t + 0.02);
+    }
+  }
+
+  const snappedIntermediates: Waypoint[] = projected.map(({ wp, t }) => {
+    const interp = interpolatePointAlongLine(dep, dest, t, 0.02, 0.98);
+    return {
+      ...wp,
+      freeformLat: wp.freeformLat ?? wp.lat,
+      freeformLng: wp.freeformLng ?? wp.lng,
+      lat: interp.lat,
+      lng: interp.lng,
+      lineFraction: interp.t,
+    };
+  });
+
+  return [dep, ...snappedIntermediates, dest];
+}
+
+/**
+ * Restore saved freeform coordinates when switching from Straight-Line mode to Freeform mode.
+ */
+export function restoreFreeformWaypoints(waypoints: Waypoint[]): Waypoint[] {
+  if (waypoints.length <= 2) return waypoints;
+  return waypoints.map((wp, idx) => {
+    if (idx === 0 || idx === waypoints.length - 1) return wp;
+    if (wp.freeformLat !== undefined && wp.freeformLng !== undefined) {
+      return {
+        ...wp,
+        lat: wp.freeformLat,
+        lng: wp.freeformLng,
+      };
+    }
+    return wp;
+  });
+}
+
+/**
+ * Insert a new waypoint into the flight plan:
+ * - If 0 waypoints exist, sets Departure (`DEP`).
+ * - If 1 waypoint exists, sets Destination (`DEST`).
+ * - If 2+ waypoints exist, inserts the waypoint BETWEEN Departure and Destination:
+ *   - In `'straight'` mode, sticks the waypoint onto the `DEP -> DEST` straight line and orders all intermediate waypoints along the line.
+ *   - In `'freeform'` mode, inserts the waypoint into the route segment between `DEP` and `DEST` with minimal detour.
+ */
+export function insertEnRouteWaypoint(
+  waypoints: Waypoint[],
+  candidateWp: Waypoint,
+  mode: RouteTrackMode = 'straight',
+  explicitFraction?: number
+): Waypoint[] {
+  if (waypoints.length === 0) {
+    return [{ ...candidateWp, lineFraction: 0 }];
+  }
+  if (waypoints.length === 1) {
+    const dep = { ...waypoints[0], lineFraction: 0 };
+    const dest = { ...candidateWp, lineFraction: 1 };
+    return [dep, dest];
+  }
+
+  const dep = waypoints[0];
+  const dest = waypoints[waypoints.length - 1];
+
+  if (mode === 'straight') {
+    const proj =
+      explicitFraction !== undefined
+        ? interpolatePointAlongLine(dep, dest, explicitFraction, 0.03, 0.97)
+        : projectPointOntoStraightLine(dep, dest, candidateWp.lat, candidateWp.lng, 0.03, 0.97);
+
+    const snappedNewWp: Waypoint = {
+      ...candidateWp,
+      freeformLat:
+        explicitFraction !== undefined ? proj.lat : (candidateWp.freeformLat ?? candidateWp.lat),
+      freeformLng:
+        explicitFraction !== undefined ? proj.lng : (candidateWp.freeformLng ?? candidateWp.lng),
+      lat: proj.lat,
+      lng: proj.lng,
+      lineFraction: proj.t,
+    };
+
+    const withInserted = [
+      ...waypoints.slice(0, waypoints.length - 1),
+      snappedNewWp,
+      dest,
+    ];
+    return snapWaypointsToStraightLine(withInserted);
+  }
+
+  // Freeform mode: if explicitFraction is provided, place at that fraction between DEP and DEST;
+  // otherwise keep exact freeform coordinates and insert into the segment with minimum detour.
+  let wpToInsert: Waypoint = {
+    ...candidateWp,
+    freeformLat: candidateWp.lat,
+    freeformLng: candidateWp.lng,
+  };
+
+  if (explicitFraction !== undefined) {
+    const interp = interpolatePointAlongLine(dep, dest, explicitFraction, 0.03, 0.97);
+    wpToInsert = {
+      ...candidateWp,
+      lat: interp.lat,
+      lng: interp.lng,
+      freeformLat: interp.lat,
+      freeformLng: interp.lng,
+      lineFraction: interp.t,
+    };
+  }
+
+  // Find segment [bestIdx, bestIdx + 1] that minimizes added distance
+  let bestInsertAfterIdx = waypoints.length - 2;
+  let minExtraDist = Infinity;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i];
+    const b = waypoints[i + 1];
+    const origLeg = calculateDistanceNm(a.lat, a.lng, b.lat, b.lng);
+    const viaCandidate =
+      calculateDistanceNm(a.lat, a.lng, wpToInsert.lat, wpToInsert.lng) +
+      calculateDistanceNm(wpToInsert.lat, wpToInsert.lng, b.lat, b.lng);
+    const extra = viaCandidate - origLeg;
+    if (extra < minExtraDist) {
+      minExtraDist = extra;
+      bestInsertAfterIdx = i;
+    }
+  }
+
+  const copy = [...waypoints];
+  copy.splice(bestInsertAfterIdx + 1, 0, wpToInsert);
+  return copy;
+}
+
+/**
+ * Update or set the Departure (`DEP`, index 0) or Destination (`DEST`, last index) waypoint.
+ * When `mode === 'straight'`, all existing intermediate waypoints automatically stick to the
+ * updated straight line drawn between the new Departure and Destination.
+ */
+export function updateEndpointWaypoint(
+  waypoints: Waypoint[],
+  role: 'DEP' | 'DEST',
+  newEndpoint: Waypoint,
+  mode: RouteTrackMode = 'straight'
+): Waypoint[] {
+  if (waypoints.length === 0) {
+    return [{ ...newEndpoint, lineFraction: role === 'DEP' ? 0 : 1 }];
+  }
+  if (waypoints.length === 1) {
+    if (role === 'DEP') {
+      return [{ ...newEndpoint, lineFraction: 0 }];
+    }
+    return [
+      { ...waypoints[0], lineFraction: 0 },
+      { ...newEndpoint, lineFraction: 1 },
+    ];
+  }
+
+  const oldDep = waypoints[0];
+  const oldDest = waypoints[waypoints.length - 1];
+  const nextDep: Waypoint = role === 'DEP' ? { ...newEndpoint, lineFraction: 0 } : oldDep;
+  const nextDest: Waypoint = role === 'DEST' ? { ...newEndpoint, lineFraction: 1 } : oldDest;
+  const intermediates = waypoints.slice(1, waypoints.length - 1);
+
+  if (mode === 'straight' && intermediates.length > 0) {
+    const reprojected = intermediates.map((wp, idx) => {
+      const prevT =
+        wp.lineFraction !== undefined && wp.lineFraction > 0 && wp.lineFraction < 1
+          ? wp.lineFraction
+          : projectPointOntoStraightLine(
+              oldDep,
+              oldDest,
+              wp.lat,
+              wp.lng,
+              0.05,
+              0.95
+            ).t || (idx + 1) / (intermediates.length + 1);
+      const interp = interpolatePointAlongLine(nextDep, nextDest, prevT, 0.03, 0.97);
+      return {
+        ...wp,
+        lat: interp.lat,
+        lng: interp.lng,
+        freeformLat: interp.lat,
+        freeformLng: interp.lng,
+        lineFraction: interp.t,
+      };
+    });
+    return snapWaypointsToStraightLine([nextDep, ...reprojected, nextDest]);
+  }
+
+  return [nextDep, ...intermediates, nextDest];
+}
+
+/**
+ * Generate `intermediateCount` evenly spaced en-route waypoints along the straight line
+ * between `dep` and `dest`, returning `[dep, ...intermediates, dest]`.
+ */
+export function generateWaypointsAlongStraightLine(
+  dep: Waypoint,
+  dest: Waypoint,
+  intermediateCount: number
+): Waypoint[] {
+  const safeCount = Math.max(0, Math.min(12, Math.round(intermediateCount)));
+  const cleanDep: Waypoint = { ...dep, lineFraction: 0 };
+  const cleanDest: Waypoint = { ...dest, lineFraction: 1 };
+  if (safeCount === 0) {
+    return [cleanDep, cleanDest];
+  }
+
+  const generated: Waypoint[] = [];
+  for (let i = 1; i <= safeCount; i++) {
+    const fraction = i / (safeCount + 1);
+    const interp = interpolatePointAlongLine(cleanDep, cleanDest, fraction, 0.02, 0.98);
+    generated.push({
+      id: `wp-line-${Date.now()}-${i}`,
+      name: `WPT ${i} (${Math.round(interp.distanceFromDepNm)}NM)`,
+      lat: interp.lat,
+      lng: interp.lng,
+      freeformLat: interp.lat,
+      freeformLng: interp.lng,
+      lineFraction: interp.t,
+      windDir: dep.windDir ?? 270,
+      windSpd: dep.windSpd ?? 15,
+      windSource: dep.windSource || 'Forecast',
+    });
+  }
+
+  return [cleanDep, ...generated, cleanDest];
 }
 
 export interface WindTriangleResult {
@@ -631,13 +977,22 @@ export function computeNavLog(
     );
 
     const geoTrack = calculateTrueTrackDeg(fromWp.lat, fromWp.lng, toWp.lat, toWp.lng);
+    const masterStraightTrack =
+      config.routeTrackMode === 'straight' && waypoints.length >= 2
+        ? calculateTrueTrackDeg(
+            waypoints[0].lat,
+            waypoints[0].lng,
+            waypoints[waypoints.length - 1].lat,
+            waypoints[waypoints.length - 1].lng
+          )
+        : geoTrack;
     const trackDeg =
       ov.trackDeg !== undefined && !isNaN(ov.trackDeg)
         ? normalizeDegrees(ov.trackDeg)
         : config.globalTrackOverrideDeg !== null &&
           !isNaN(config.globalTrackOverrideDeg)
         ? normalizeDegrees(config.globalTrackOverrideDeg)
-        : geoTrack;
+        : masterStraightTrack;
 
     // Wind data for leg: override -> destination waypoint wind -> departure waypoint wind -> 0
     const windDir =

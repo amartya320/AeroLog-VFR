@@ -476,6 +476,106 @@ test('aviationMapUtils projects Web Mercator coordinates reversibly and searches
   assert.equal(matches[0].code, 'VOCL');
 });
 
+test('straight-line track mode snaps intermediate waypoints onto the DEP-DEST line, orders them from DEP to DEST, and keepsfreeform mode off-track', async () => {
+  const {
+    interpolatePointAlongLine,
+    projectPointOntoStraightLine,
+    snapWaypointsToStraightLine,
+    restoreFreeformWaypoints,
+    insertEnRouteWaypoint,
+    updateEndpointWaypoint,
+    generateWaypointsAlongStraightLine,
+  } = await import('./navlogMath');
+
+  const dep: Waypoint = {
+    id: 'dep',
+    name: 'VOCL (CALICUT)',
+    lat: 11.0,
+    lng: 76.0,
+    windDir: 270,
+    windSpd: 14,
+  };
+  const dest: Waypoint = {
+    id: 'dest',
+    name: 'VOMY (MYSORE)',
+    lat: 12.0,
+    lng: 77.0,
+    windDir: 265,
+    windSpd: 15,
+  };
+
+  // 1. Midpoint interpolation (50%)
+  const mid = interpolatePointAlongLine(dep, dest, 0.5);
+  assert.equal(mid.lat, 11.5);
+  assert.equal(mid.lng, 76.5);
+  assert.equal(mid.t, 0.5);
+
+  // 2. Project an off-track point onto the diagonal line (lat = 11 + t, lng = 76 + t)
+  const offTrack = projectPointOntoStraightLine(dep, dest, 11.3, 76.9);
+  assert.ok(Math.abs(offTrack.lat - 11.0 - (offTrack.lng - 76.0)) < 0.001);
+  assert.ok(offTrack.crossTrackDistanceNm > 10);
+
+  // 3. Insert multiple waypoints in Straight-Line mode out of geographical order:
+  // Add a point at ~75% first, then a point at ~25%
+  let route: Waypoint[] = [dep, dest];
+  route = insertEnRouteWaypoint(
+    route,
+    { id: 'w-75', name: 'GUNDLUPET', lat: 11.8, lng: 76.65 },
+    'straight'
+  );
+  route = insertEnRouteWaypoint(
+    route,
+    { id: 'w-25', name: 'NILAMBUR', lat: 11.2, lng: 76.35 },
+    'straight'
+  );
+
+  assert.equal(route.length, 4);
+  assert.equal(route[0].name, 'VOCL (CALICUT)');
+  // Because w-25 is closer to DEP than w-75, straight-line snapping sorts w-25 before w-75
+  assert.equal(route[1].name, 'NILAMBUR');
+  assert.equal(route[2].name, 'GUNDLUPET');
+  assert.equal(route[3].name, 'VOMY (MYSORE)');
+
+  // Both intermediate waypoints must lie on the straight line y = x (lat - 11 === lng - 76)
+  for (const wp of route.slice(1, 3)) {
+    const dLat = wp.lat - dep.lat;
+    const dLng = wp.lng - dep.lng;
+    assert.ok(
+      Math.abs(dLat - dLng) < 0.0005,
+      `Waypoint ${wp.name} (${wp.lat}, ${wp.lng}) should stick to straight line`
+    );
+  }
+
+  // 4. Restore freeform coordinates restores original off-track positions
+  const restored = restoreFreeformWaypoints(route);
+  const nilamburRestored = restored.find((w) => w.name === 'NILAMBUR')!;
+  assert.equal(nilamburRestored.lat, 11.2);
+  assert.equal(nilamburRestored.lng, 76.35);
+
+  // 5. Updating Destination in Straight-Line mode re-sticks intermediate waypoints to the new line
+  const newDest: Waypoint = {
+    id: 'dest-2',
+    name: 'VOBG (BENGALURU)',
+    lat: 13.0,
+    lng: 78.0,
+  };
+  const updatedLine = updateEndpointWaypoint(route, 'DEST', newDest, 'straight');
+  assert.equal(updatedLine[updatedLine.length - 1].name, 'VOBG (BENGALURU)');
+  for (const wp of updatedLine.slice(1, 3)) {
+    const ratioLat = (wp.lat - dep.lat) / (newDest.lat - dep.lat);
+    const ratioLng = (wp.lng - dep.lng) / (newDest.lng - dep.lng);
+    assert.ok(Math.abs(ratioLat - ratioLng) < 0.001);
+  }
+
+  // 6. Generate 3 evenly spaced waypoints along the straight line (25%, 50%, 75%)
+  const generated = generateWaypointsAlongStraightLine(dep, dest, 3);
+  assert.equal(generated.length, 5); // DEP + 3 WPTs + DEST
+  assert.equal(generated[1].lat, 11.25);
+  assert.equal(generated[2].lat, 11.5);
+  assert.equal(generated[3].lat, 11.75);
+});
+
+
 
 
 

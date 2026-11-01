@@ -22,13 +22,19 @@ import {
   AlternateAerodrome,
   FlightConfig,
   LegOverride,
+  RouteTrackMode,
   WIND_MODEL_OPTIONS,
   Waypoint,
   WindModelId,
   computeNavLog,
   formatCalc,
+  generateWaypointsAlongStraightLine,
   getClosestAltitudeLevel,
   getCurrentIstDateTime,
+  insertEnRouteWaypoint,
+  restoreFreeformWaypoints,
+  snapWaypointsToStraightLine,
+  updateEndpointWaypoint,
 } from './utils/navlogMath';
 import { PRESET_ROUTES } from './utils/presetRoutes';
 import { fetchUpperAirWindsBatchClient } from './utils/weatherClient';
@@ -46,11 +52,14 @@ export default function App() {
     return {
       ...PRESET_ROUTES[0].config,
       windModel: 'ecmwf_ifs025',
+      routeTrackMode: 'straight',
       departureDate: ist.date,
       airborneTime: ist.time,
     };
   });
-  const [waypoints, setWaypoints] = useState<Waypoint[]>(PRESET_ROUTES[0].waypoints);
+  const [waypoints, setWaypoints] = useState<Waypoint[]>(() =>
+    snapWaypointsToStraightLine(PRESET_ROUTES[0].waypoints)
+  );
   const [overrides, setOverrides] = useState<Record<string, LegOverride>>({});
   const [selectedLegIndex, setSelectedLegIndex] = useState<number>(0);
   const [showMagneticHeading, setShowMagneticHeading] = useState<boolean>(false);
@@ -247,16 +256,22 @@ export default function App() {
     const found = PRESET_ROUTES.find((r) => r.id === presetId);
     if (!found) return;
     const currentModel = config.windModel || 'ecmwf_ifs025';
+    const currentTrackMode: RouteTrackMode = config.routeTrackMode || 'straight';
+    const nextWaypoints =
+      currentTrackMode === 'straight'
+        ? snapWaypointsToStraightLine(found.waypoints)
+        : found.waypoints;
     setActivePresetId(found.id);
     setConfig({
       ...found.config,
       windModel: currentModel,
+      routeTrackMode: currentTrackMode,
     });
-    setWaypoints(found.waypoints);
+    setWaypoints(nextWaypoints);
     setOverrides({});
     setSelectedLegIndex(0);
     fetchUpperAirWinds(
-      found.waypoints,
+      nextWaypoints,
       found.config.selectedAltitudeFt,
       found.config.departureDate,
       found.config.airborneTime,
@@ -309,30 +324,17 @@ export default function App() {
     }
   };
 
-  const handleAddWaypointFromMap = useCallback(
-    (lat: number, lng: number, suggestedName?: string) => {
-      const nextNum = waypoints.length;
-      const newWp: Waypoint = {
-        id: `wp-${Date.now()}-${nextNum}`,
-        name: suggestedName || `WPT ${nextNum}`,
-        lat,
-        lng,
-        windDir: waypoints[waypoints.length - 1]?.windDir ?? 270,
-        windSpd: waypoints[waypoints.length - 1]?.windSpd ?? 15,
-        windSource: 'Fetching...',
-      };
-      // Insert en-route between departure and destination when 2+ waypoints exist
-      const updated =
-        waypoints.length >= 2
-          ? [
-              ...waypoints.slice(0, waypoints.length - 1),
-              newWp,
-              waypoints[waypoints.length - 1],
-            ]
-          : [...waypoints, newWp];
-      setWaypoints(updated);
+  const handleChangeRouteTrackMode = useCallback(
+    (newMode: RouteTrackMode) => {
+      updateConfig({ routeTrackMode: newMode });
+      const nextWaypoints =
+        newMode === 'straight'
+          ? snapWaypointsToStraightLine(waypoints)
+          : restoreFreeformWaypoints(waypoints);
+      setWaypoints(nextWaypoints);
+      setOverrides({});
       fetchUpperAirWinds(
-        updated,
+        nextWaypoints,
         config.selectedAltitudeFt,
         config.departureDate,
         config.airborneTime,
@@ -347,15 +349,81 @@ export default function App() {
       config.airborneTime,
       config.alternate,
       config.windModel,
+      updateConfig,
       fetchUpperAirWinds,
     ]
   );
 
-  const handleUpdateWaypointCoord = useCallback(
-    (id: string, lat: number, lng: number) => {
-      const updated = waypoints.map((wp) =>
-        wp.id === id ? { ...wp, lat, lng } : wp
+  const handleSetEndpointWaypoint = useCallback(
+    (
+      role: 'DEP' | 'DEST',
+      name: string,
+      lat: number,
+      lng: number,
+      elevationFt?: number
+    ) => {
+      const mode: RouteTrackMode = config.routeTrackMode || 'straight';
+      const existingEndpoint =
+        role === 'DEP' ? waypoints[0] : waypoints[waypoints.length - 1];
+      const endpointWp: Waypoint = {
+        id: existingEndpoint?.id || `wp-${role.toLowerCase()}-${Date.now()}`,
+        name: name || (role === 'DEP' ? 'DEPARTURE' : 'DESTINATION'),
+        lat: Math.round(lat * 10000) / 10000,
+        lng: Math.round(lng * 10000) / 10000,
+        elevationFt,
+        windDir: existingEndpoint?.windDir ?? 270,
+        windSpd: existingEndpoint?.windSpd ?? 15,
+        windSource: 'Fetching...',
+      };
+      const updated = updateEndpointWaypoint(waypoints, role, endpointWp, mode);
+      setWaypoints(updated);
+      setOverrides({});
+      fetchUpperAirWinds(
+        updated,
+        config.selectedAltitudeFt,
+        config.departureDate,
+        config.airborneTime,
+        config.alternate,
+        config.windModel || 'ecmwf_ifs025'
       );
+    },
+    [
+      waypoints,
+      config.routeTrackMode,
+      config.selectedAltitudeFt,
+      config.departureDate,
+      config.airborneTime,
+      config.alternate,
+      config.windModel,
+      fetchUpperAirWinds,
+    ]
+  );
+
+  const handleAddWaypointFromMap = useCallback(
+    (lat: number, lng: number, suggestedName?: string, explicitFraction?: number) => {
+      const mode: RouteTrackMode = config.routeTrackMode || 'straight';
+      const isDepFirst = waypoints.length === 0;
+      const isDestSecond = waypoints.length === 1;
+      const enRouteNumber = Math.max(1, waypoints.length - 1);
+      const defaultName = isDepFirst
+        ? 'DEP AERODROME'
+        : isDestSecond
+        ? 'DEST AERODROME'
+        : `WPT ${enRouteNumber}`;
+
+      const newWp: Waypoint = {
+        id: `wp-${Date.now()}-${waypoints.length}`,
+        name: suggestedName || defaultName,
+        lat,
+        lng,
+        freeformLat: lat,
+        freeformLng: lng,
+        windDir: waypoints[waypoints.length - 1]?.windDir ?? 270,
+        windSpd: waypoints[waypoints.length - 1]?.windSpd ?? 15,
+        windSource: 'Fetching...',
+      };
+
+      const updated = insertEnRouteWaypoint(waypoints, newWp, mode, explicitFraction);
       setWaypoints(updated);
       fetchUpperAirWinds(
         updated,
@@ -368,6 +436,97 @@ export default function App() {
     },
     [
       waypoints,
+      config.routeTrackMode,
+      config.selectedAltitudeFt,
+      config.departureDate,
+      config.airborneTime,
+      config.alternate,
+      config.windModel,
+      fetchUpperAirWinds,
+    ]
+  );
+
+  const handleGenerateEvenWaypoints = useCallback(
+    (count: number) => {
+      if (waypoints.length < 2) return;
+      const dep = waypoints[0];
+      const dest = waypoints[waypoints.length - 1];
+      const generated = generateWaypointsAlongStraightLine(dep, dest, count);
+      updateConfig({ routeTrackMode: 'straight' });
+      setWaypoints(generated);
+      setOverrides({});
+      setSelectedLegIndex(0);
+      fetchUpperAirWinds(
+        generated,
+        config.selectedAltitudeFt,
+        config.departureDate,
+        config.airborneTime,
+        config.alternate,
+        config.windModel || 'ecmwf_ifs025'
+      );
+    },
+    [
+      waypoints,
+      config.selectedAltitudeFt,
+      config.departureDate,
+      config.airborneTime,
+      config.alternate,
+      config.windModel,
+      updateConfig,
+      fetchUpperAirWinds,
+    ]
+  );
+
+  const handleUpdateWaypointCoord = useCallback(
+    (id: string, lat: number, lng: number) => {
+      const mode: RouteTrackMode = config.routeTrackMode || 'straight';
+      const idx = waypoints.findIndex((wp) => wp.id === id);
+      if (idx === -1) return;
+
+      let updated: Waypoint[];
+      if (idx === 0) {
+        updated = updateEndpointWaypoint(
+          waypoints,
+          'DEP',
+          { ...waypoints[0], lat, lng },
+          mode
+        );
+      } else if (idx === waypoints.length - 1 && waypoints.length > 1) {
+        updated = updateEndpointWaypoint(
+          waypoints,
+          'DEST',
+          { ...waypoints[waypoints.length - 1], lat, lng },
+          mode
+        );
+      } else {
+        const rawUpdated = waypoints.map((wp) =>
+          wp.id === id
+            ? {
+                ...wp,
+                lat,
+                lng,
+                freeformLat: mode === 'freeform' ? lat : wp.freeformLat,
+                freeformLng: mode === 'freeform' ? lng : wp.freeformLng,
+              }
+            : wp
+        );
+        updated =
+          mode === 'straight' ? snapWaypointsToStraightLine(rawUpdated) : rawUpdated;
+      }
+
+      setWaypoints(updated);
+      fetchUpperAirWinds(
+        updated,
+        config.selectedAltitudeFt,
+        config.departureDate,
+        config.airborneTime,
+        config.alternate,
+        config.windModel || 'ecmwf_ifs025'
+      );
+    },
+    [
+      waypoints,
+      config.routeTrackMode,
       config.selectedAltitudeFt,
       config.departureDate,
       config.airborneTime,
@@ -594,7 +753,7 @@ export default function App() {
             <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 whitespace-nowrap">
               vibecoded by{' '}
               <a
-                href="https://x.com/amartya320"
+                href="https://www.instagram.com/amartya320/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sky-700 hover:text-sky-900 font-semibold underline decoration-sky-300 underline-offset-2"
@@ -1087,6 +1246,8 @@ export default function App() {
           <RouteMap
             waypoints={waypoints}
             legs={navLogSummary.legs}
+            routeTrackMode={config.routeTrackMode || 'straight'}
+            onChangeRouteTrackMode={handleChangeRouteTrackMode}
             alternate={config.alternate}
             alternateFrom={config.alternateFrom || 'DEST'}
             computedAlternate={navLogSummary.alternateLeg}
@@ -1097,7 +1258,17 @@ export default function App() {
             departureTime={config.airborneTime}
             selectedLegIndex={safeSelectedLegIndex}
             onSelectLeg={setSelectedLegIndex}
-            onAddWaypointFromMap={handleAddWaypointFromMap}
+            onAddWaypointFromMap={(lat, lng, suggestedName) =>
+              handleAddWaypointFromMap(lat, lng, suggestedName)
+            }
+            onSetEndpointFromMap={(role, lat, lng, suggestedName) =>
+              handleSetEndpointWaypoint(
+                role,
+                suggestedName || (role === 'DEP' ? 'MAP DEP' : 'MAP DEST'),
+                lat,
+                lng
+              )
+            }
             onUpdateWaypointCoord={handleUpdateWaypointCoord}
             onUpdateAlternateCoord={handleUpdateAlternateCoord}
             onRemoveWaypoint={handleRemoveWaypoint}
@@ -1122,21 +1293,30 @@ export default function App() {
               <WaypointManager
                 waypoints={waypoints}
                 selectedAltitudeFt={config.selectedAltitudeFt}
-                onAddWaypoint={(name, lat, lng) =>
-                  handleAddWaypointFromMap(lat, lng, name)
+                routeTrackMode={config.routeTrackMode || 'straight'}
+                onChangeRouteTrackMode={handleChangeRouteTrackMode}
+                onSetEndpointWaypoint={handleSetEndpointWaypoint}
+                onAddWaypoint={(name, lat, lng, explicitFraction) =>
+                  handleAddWaypointFromMap(lat, lng, name, explicitFraction)
                 }
+                onGenerateEvenWaypoints={handleGenerateEvenWaypoints}
                 onUpdateWaypoint={handleUpdateWaypoint}
+                onUpdateWaypointCoord={handleUpdateWaypointCoord}
                 onMoveWaypoint={handleMoveWaypoint}
                 onRemoveWaypoint={handleRemoveWaypoint}
                 onReverseRoute={handleReverseRoute}
                 onClearAllWaypoints={handleClearFlightPlan}
                 onImportWaypoints={(imported) => {
-                  setWaypoints(imported);
+                  const nextWpts =
+                    (config.routeTrackMode || 'straight') === 'straight'
+                      ? snapWaypointsToStraightLine(imported)
+                      : imported;
+                  setWaypoints(nextWpts);
                   setOverrides({});
                   setSelectedLegIndex(0);
                   setConfig((prev) => ({ ...prev, alternate: null }));
                   fetchUpperAirWinds(
-                    imported,
+                    nextWpts,
                     config.selectedAltitudeFt,
                     config.departureDate,
                     config.airborneTime,
@@ -1277,7 +1457,7 @@ export default function App() {
           <span className="font-mono text-slate-700 font-medium">
             vibecoded by{' '}
             <a
-              href="https://x.com/amartya320"
+              href="https://www.instagram.com/amartya320/"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sky-700 hover:text-sky-900 font-semibold underline decoration-sky-300 underline-offset-2"

@@ -21,7 +21,7 @@
 }
 
 /* ============================================================================
-   Cockpit Night / Dark Mode Theme (Screen Only — Print Remains Crisp White)
+   Cockpit Night / True AMOLED Black Dark Mode Theme (Screen Only — Print Remains Crisp White)
    ============================================================================ */
 @media screen {
   html.dark {
@@ -30,113 +30,126 @@
 
   html.dark body,
   html.dark #top {
-    background-color: #020617 !important;
-    color: #f1f5f9 !important;
+    background-color: #000000 !important;
+    color: #f8fafc !important;
   }
 
-  /* Surfaces & Cards */
+  /* Primary Surfaces & Cards — Pure AMOLED Black (#000000) */
   html.dark .bg-white {
-    background-color: #0f172a !important;
+    background-color: #000000 !important;
   }
 
   html.dark .bg-white\/95 {
-    background-color: rgba(15, 23, 42, 0.95) !important;
+    background-color: rgba(0, 0, 0, 0.96) !important;
   }
 
+  html.dark .bg-slate-950,
+  html.dark .bg-slate-900 {
+    background-color: #000000 !important;
+  }
+
+  html.dark .bg-slate-900\/90,
+  html.dark .bg-slate-900\/92 {
+    background-color: rgba(0, 0, 0, 0.94) !important;
+  }
+
+  /* Secondary / Input / Subtle Surfaces — Ultra-Deep AMOLED Carbon (#060606 - #121212) */
   html.dark .bg-slate-50 {
-    background-color: #131c31 !important;
+    background-color: #060606 !important;
   }
 
   html.dark .bg-slate-50\/50,
   html.dark .bg-slate-50\/70 {
-    background-color: rgba(30, 41, 59, 0.55) !important;
+    background-color: #050505 !important;
   }
 
-  html.dark .bg-slate-100 {
-    background-color: #1e293b !important;
+  html.dark .bg-slate-100,
+  html.dark .bg-slate-800,
+  html.dark .bg-slate-800\/90 {
+    background-color: #0c0c0c !important;
   }
 
-  html.dark .bg-slate-200 {
-    background-color: #334155 !important;
+  html.dark .bg-slate-200,
+  html.dark .bg-slate-200\/80 {
+    background-color: #141414 !important;
   }
 
-  /* Accented Input & Status Surfaces in Dark Mode */
+  /* Accented Input & Status Surfaces in AMOLED Dark Mode */
   html.dark .bg-sky-50,
   html.dark .bg-sky-50\/60,
-  html.dark .bg-sky-50\/90 {
-    background-color: rgba(14, 116, 144, 0.24) !important;
+  html.dark .bg-sky-50\/90,
+  html.dark .bg-sky-50\/40 {
+    background-color: rgba(14, 116, 144, 0.16) !important;
   }
 
   html.dark .bg-emerald-50,
   html.dark .bg-emerald-50\/70,
-  html.dark .bg-emerald-50\/60 {
-    background-color: rgba(6, 95, 70, 0.26) !important;
+  html.dark .bg-emerald-50\/60,
+  html.dark .bg-emerald-50\/40 {
+    background-color: rgba(6, 95, 70, 0.18) !important;
   }
 
   html.dark .bg-indigo-50,
   html.dark .bg-indigo-50\/50,
   html.dark .bg-indigo-50\/80 {
-    background-color: rgba(67, 56, 202, 0.24) !important;
+    background-color: rgba(67, 56, 202, 0.18) !important;
   }
 
   html.dark .bg-purple-50 {
-    background-color: rgba(126, 34, 206, 0.25) !important;
+    background-color: rgba(126, 34, 206, 0.18) !important;
   }
 
   html.dark .bg-rose-50 {
-    background-color: rgba(190, 18, 60, 0.22) !important;
+    background-color: rgba(190, 18, 60, 0.18) !important;
   }
 
   html.dark .bg-amber-50,
   html.dark .bg-amber-100 {
-    background-color: rgba(180, 83, 9, 0.28) !important;
+    background-color: rgba(180, 83, 9, 0.22) !important;
   }
 
-  /* Borders & Dividers */
+  /* Borders & Dividers — Crisp Subtle Lines on Pure Black */
   html.dark .border-slate-100,
   html.dark .border-slate-200 {
-    border-color: #1e293b !important;
+    border-color: #1a1a1a !important;
   }
 
   html.dark .border-slate-300,
-  html.dark .border-slate-400 {
-    border-color: #334155 !important;
-  }
-
+  html.dark .border-slate-400,
   html.dark .border-slate-700,
   html.dark .border-slate-800 {
-    border-color: #334155 !important;
+    border-color: #262626 !important;
   }
 
   html.dark .divide-slate-400 > :not([hidden]) ~ :not([hidden]),
   html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
   html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
-    border-color: #334155 !important;
+    border-color: #1f1f1f !important;
   }
 
   html.dark .border-sky-200,
   html.dark .border-sky-300 {
-    border-color: rgba(56, 189, 248, 0.4) !important;
+    border-color: rgba(56, 189, 248, 0.35) !important;
   }
 
   html.dark .border-emerald-200,
   html.dark .border-emerald-300 {
-    border-color: rgba(52, 211, 153, 0.4) !important;
+    border-color: rgba(52, 211, 153, 0.35) !important;
   }
 
   html.dark .border-indigo-200,
   html.dark .border-indigo-300 {
-    border-color: rgba(129, 140, 248, 0.45) !important;
+    border-color: rgba(129, 140, 248, 0.4) !important;
   }
 
   html.dark .border-purple-200,
   html.dark .border-purple-300 {
-    border-color: rgba(192, 132, 252, 0.45) !important;
+    border-color: rgba(192, 132, 252, 0.4) !important;
   }
 
   html.dark .border-rose-200,
   html.dark .border-rose-300 {
-    border-color: rgba(251, 113, 133, 0.4) !important;
+    border-color: rgba(251, 113, 133, 0.35) !important;
   }
 
   /* Typography Hierarchy */
@@ -147,15 +160,15 @@
   }
 
   html.dark .text-slate-700 {
-    color: #cbd5e1 !important;
+    color: #d4d4d8 !important;
   }
 
   html.dark .text-slate-600 {
-    color: #94a3b8 !important;
+    color: #a1a1aa !important;
   }
 
   html.dark .text-slate-500 {
-    color: #94a3b8 !important;
+    color: #8e8e93 !important;
   }
 
   html.dark .text-sky-950,
@@ -198,15 +211,15 @@
     color: #fcd34d !important;
   }
 
-  /* Form Controls (Selects & Inputs) in Dark Mode */
+  /* Form Controls (Selects & Inputs) in AMOLED Dark Mode */
   html.dark select option {
-    background-color: #0f172a;
+    background-color: #000000;
     color: #f8fafc;
   }
 
   html.dark input:focus,
   html.dark select:focus {
-    background-color: #1e293b !important;
+    background-color: #0a0a0a !important;
   }
 }
 
