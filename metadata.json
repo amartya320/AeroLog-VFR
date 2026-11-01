@@ -1,0 +1,6 @@
+{
+  "name": "AeroLog VFR Flight NavLog Calculator",
+  "description": "Interactive aviation navigation log calculator with Google Maps & Earth waypoint selection, altitude-specific upper-air wind integration, E6B wind triangle solver, and fuel/time leg computations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

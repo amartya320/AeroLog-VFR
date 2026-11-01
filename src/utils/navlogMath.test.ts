@@ -1,0 +1,401 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  calculateDistanceNm,
+  calculateTrueTrackDeg,
+  solveWindTriangle,
+  addMinutesToTime,
+  getCurrentIstDateTime,
+  computeNavLog,
+  computeAlternateLeg,
+  computeFuelPlanBreakdown,
+  parseKmlWaypoints,
+  FlightConfig,
+  Waypoint,
+} from './navlogMath';
+
+test('getCurrentIstDateTime converts UTC timestamp to Indian Standard Time (UTC+05:30)', () => {
+  // 2026-10-31T19:42:00Z + 05:30 = 2026-11-01 01:12 IST
+  const sampleUtc = new Date('2026-10-31T19:42:00Z');
+  const ist = getCurrentIstDateTime(sampleUtc);
+  assert.equal(ist.date, '2026-11-01');
+  assert.equal(ist.time, '01:12');
+});
+
+test('calculateDistanceNm and calculateTrueTrackDeg return accurate nautical miles and bearings', () => {
+  // 1 degree of latitude along a meridian is ~60 NM
+  const dist = calculateDistanceNm(10.0, 76.0, 11.0, 76.0);
+  assert.ok(dist > 59.8 && dist < 60.2, `Expected ~60 NM, got ${dist}`);
+
+  const trackNorth = calculateTrueTrackDeg(10.0, 76.0, 11.0, 76.0);
+  assert.equal(trackNorth, 0);
+
+  const trackEast = calculateTrueTrackDeg(0.0, 76.0, 0.0, 77.0);
+  assert.equal(trackEast, 90);
+
+  const trackSouth = calculateTrueTrackDeg(11.0, 76.0, 10.0, 76.0);
+  assert.equal(trackSouth, 180);
+});
+
+test('solveWindTriangle handles pure headwind, tailwind, and right crosswind accurately', () => {
+  // Direct headwind: Track 090, TAS 100 kt, Wind 090 @ 20 kt -> GS = 80 kt, WCA = 0, HDG = 090
+  const hw = solveWindTriangle(90, 100, 90, 20, 0);
+  assert.equal(hw.wcaDeg, 0);
+  assert.equal(hw.trueHeadingDeg, 90);
+  assert.equal(hw.groundSpeedKt, 80);
+
+  // Direct tailwind: Track 090, TAS 100 kt, Wind 270 @ 20 kt -> GS = 120 kt, WCA = 0, HDG = 090
+  const tw = solveWindTriangle(90, 100, 270, 20, 0);
+  assert.equal(tw.wcaDeg, 0);
+  assert.equal(tw.trueHeadingDeg, 90);
+  assert.equal(tw.groundSpeedKt, 120);
+
+  // Right 90-degree crosswind: Track 360 (0), TAS 100 kt, Wind 090 @ 20 kt
+  // sin(WCA) = 20 / 100 = 0.2 -> WCA = +11.5 deg -> True Heading = 012 deg, GS = 100 * cos(11.54) = 98.0 kt
+  const xw = solveWindTriangle(0, 100, 90, 20, 0);
+  assert.equal(xw.wcaDeg, 11.5);
+  assert.equal(xw.trueHeadingDeg, 12);
+  assert.equal(xw.groundSpeedKt, 98);
+});
+
+test('addMinutesToTime wraps around 24-hour clock accurately', () => {
+  assert.equal(addMinutesToTime('08:30', 45), '09:15');
+  assert.equal(addMinutesToTime('23:50', 25), '00:15');
+});
+
+test('computeNavLog calculates legs, alternate diversion leg, and complete fuel plan breakdown', () => {
+  const waypoints: Waypoint[] = [
+    { id: 'w1', name: 'VOCL', lat: 11.1368, lng: 75.9553, windDir: 270, windSpd: 15 },
+    { id: 'w2', name: 'NILAMBUR', lat: 11.2789, lng: 76.2255, windDir: 280, windSpd: 18 },
+    { id: 'w3', name: 'VOMY', lat: 12.23, lng: 76.6558, windDir: 260, windSpd: 20 },
+  ];
+
+  const config: FlightConfig = {
+    cruiseTasKt: 110,
+    fuelFlowLph: 32,
+    initialFuelLiters: 140,
+    taxiFuelLiters: 4,
+    contingencyPercent: 5,
+    holdingFuelLiters: 24,
+    reserveFuelLiters: 24,
+    departureDate: '2026-10-31',
+    airborneTime: '06:00',
+    selectedAltitudeFt: 5000,
+    magneticVariationDeg: -2,
+    globalTrackOverrideDeg: null,
+    alternate: {
+      name: 'VOBG (HAL Bengaluru)',
+      lat: 12.9499,
+      lng: 77.6682,
+      windDir: 270,
+      windSpd: 14,
+    },
+  };
+
+  const summary = computeNavLog(waypoints, config, {});
+  assert.equal(summary.legs.length, 2);
+  assert.equal(summary.legs[0].fromName, 'VOCL');
+  assert.equal(summary.legs[0].toName, 'NILAMBUR');
+  assert.equal(summary.legs[1].toGoDistNm, 0);
+  assert.equal(
+    Math.round((summary.legs[0].legDistNm + summary.legs[1].legDistNm) * 10) / 10,
+    summary.totalDistanceNm
+  );
+  assert.ok(summary.totalFuelRequiredLiters > 0);
+
+  // Verify takeoff fuel minus trip fuel equals final fuel remaining
+  assert.equal(
+    Math.round((config.initialFuelLiters - config.taxiFuelLiters - summary.totalFuelRequiredLiters) * 10) / 10,
+    summary.finalFuelRemainingLiters
+  );
+
+  // Verify alternate leg calculation from VOMY to VOBG
+  assert.ok(summary.alternateLeg !== null);
+  assert.equal(summary.alternateLeg?.fromName, 'VOMY');
+  assert.equal(summary.alternateLeg?.toName, 'VOBG (HAL Bengaluru)');
+  assert.ok((summary.alternateLeg?.distanceNm || 0) > 65);
+  assert.ok((summary.alternateLeg?.fuelEstLiters || 0) > 15);
+
+  // Verify Fuel Plan Breakdown (Taxi + Trip + Contingency 5% + Alternate + Holding)
+  const fp = summary.fuelPlan;
+  assert.equal(fp.taxiFuelLiters, 4);
+  assert.equal(fp.contingencyPercent, 5);
+  assert.equal(
+    fp.contingencyFuelLiters,
+    Math.round(fp.tripFuelLiters * 0.05 * 10) / 10
+  );
+  assert.equal(fp.holdingFuelLiters, 24);
+  assert.equal(
+    fp.totalBlockFuelRequiredLiters,
+    Math.round(
+      (fp.taxiFuelLiters +
+        fp.tripFuelLiters +
+        fp.contingencyFuelLiters +
+        fp.alternateFuelLiters +
+        fp.holdingFuelLiters) *
+        10
+    ) / 10
+  );
+});
+
+test('computeFuelPlanBreakdown computes exact contingency percentage and holding time', () => {
+  const config: FlightConfig = {
+    cruiseTasKt: 120,
+    fuelFlowLph: 30,
+    initialFuelLiters: 150,
+    taxiFuelLiters: 5,
+    contingencyPercent: 10,
+    holdingFuelLiters: 22.5, // 45 mins at 30 L/hr
+    reserveFuelLiters: 22.5,
+    departureDate: '2026-10-31',
+    airborneTime: '08:00',
+    selectedAltitudeFt: 5000,
+    magneticVariationDeg: 0,
+    globalTrackOverrideDeg: null,
+    alternate: null,
+  };
+
+  const breakdown = computeFuelPlanBreakdown(50, 20, config);
+  assert.equal(breakdown.taxiFuelLiters, 5);
+  assert.equal(breakdown.tripFuelLiters, 50);
+  assert.equal(breakdown.contingencyFuelLiters, 5); // 10% of 50 L
+  assert.equal(breakdown.alternateFuelLiters, 20);
+  assert.equal(breakdown.holdingFuelLiters, 22.5);
+  assert.equal(breakdown.holdingTimeMin, 45);
+  assert.equal(breakdown.totalTakeoffFuelRequiredLiters, 97.5); // 50 + 5 + 20 + 22.5
+  assert.equal(breakdown.totalBlockFuelRequiredLiters, 102.5); // 5 + 97.5
+  assert.equal(breakdown.extraFuelMarginLiters, 47.5); // 150 - 102.5
+  assert.equal(breakdown.isBlockFuelSufficient, true);
+});
+
+test('parseKmlWaypoints extracts Placemarks from Google Earth KML XML and ignores LineString when Point Placemarks exist', () => {
+  const exportedKml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>VFR Flight Plan Route</name>
+    <Placemark>
+      <name>Flight Route Path</name>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>75.9553,11.1368,0 76.2255,11.2789,0 76.6558,12.23,0</coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>VOCL (Calicut)</name>
+      <Point><coordinates>75.9553,11.1368,0</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>NILAMBUR</name>
+      <Point><coordinates>76.2255,11.2789,0</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>VOMY (Mysuru)</name>
+      <Point><coordinates>76.6558,12.23,0</coordinates></Point>
+    </Placemark>
+  </Document>
+</kml>`;
+  const parsed = parseKmlWaypoints(exportedKml);
+  assert.equal(parsed.length, 3);
+  assert.equal(parsed[0].name, 'VOCL (CALICUT)');
+  assert.equal(parsed[1].name, 'NILAMBUR');
+  assert.equal(parsed[2].name, 'VOMY (MYSURU)');
+});
+
+test('customAlternateFuelLiters and roundOffValues work accurately in computeNavLog', () => {
+  const waypoints: Waypoint[] = [
+    { id: 'w1', name: 'VOCL', lat: 11.1368, lng: 75.9553, windDir: 270, windSpd: 15 },
+    { id: 'w2', name: 'VOMY', lat: 12.23, lng: 76.6558, windDir: 260, windSpd: 20 },
+  ];
+
+  const config: FlightConfig = {
+    cruiseTasKt: 85,
+    fuelFlowLph: 15,
+    initialFuelLiters: 120,
+    taxiFuelLiters: 5,
+    contingencyPercent: 5,
+    holdingFuelLiters: 11.3,
+    reserveFuelLiters: 11.3,
+    customAlternateFuelLiters: 18.6,
+    roundOffValues: true,
+    departureDate: '2026-10-31',
+    airborneTime: '06:00',
+    selectedAltitudeFt: 4500,
+    magneticVariationDeg: -2,
+    globalTrackOverrideDeg: null,
+    alternate: {
+      name: 'VOBG',
+      lat: 12.9499,
+      lng: 77.6682,
+      windDir: 270,
+      windSpd: 14,
+    },
+  };
+
+  const summary = computeNavLog(waypoints, config, {});
+  assert.equal(Number.isInteger(summary.legs[0].legDistNm), true);
+  assert.equal(Number.isInteger(summary.legs[0].timeTakenMin), true);
+  assert.equal(Number.isInteger(summary.legs[0].fuelEstLiters), true);
+  assert.equal(summary.fuelPlan.isCustomAlternateFuel, true);
+  assert.equal(summary.fuelPlan.alternateFuelLiters, 19); // 18.6 rounded
+  assert.equal(Number.isInteger(summary.fuelPlan.totalBlockFuelRequiredLiters), true);
+});
+
+test('computeNavLog calculates alternate leg from DEP or DEST based on alternateFrom choice, and does not take auto alternate when alternate is null', async () => {
+  const { PRESET_ROUTES } = await import('./presetRoutes');
+  for (const preset of PRESET_ROUTES) {
+    assert.equal(
+      preset.config.alternate,
+      null,
+      `Preset ${preset.id} should not auto-populate an alternate aerodrome`
+    );
+  }
+
+  const waypoints: Waypoint[] = [
+    { id: 'w1', name: 'VOCL (CALICUT)', lat: 11.1368, lng: 75.9553, windDir: 270, windSpd: 14 },
+    { id: 'w2', name: 'NILAMBUR', lat: 11.2789, lng: 76.2255, windDir: 280, windSpd: 16 },
+    { id: 'w3', name: 'VOMY (MYSORE)', lat: 12.23, lng: 76.6558, windDir: 265, windSpd: 15 },
+  ];
+
+  const baseConfig: FlightConfig = {
+    cruiseTasKt: 85,
+    fuelFlowLph: 15,
+    initialFuelLiters: 120,
+    taxiFuelLiters: 5,
+    contingencyPercent: 5,
+    holdingFuelLiters: 11.3,
+    reserveFuelLiters: 11.3,
+    departureDate: '2026-10-31',
+    airborneTime: '06:00',
+    selectedAltitudeFt: 5000,
+    magneticVariationDeg: -1.5,
+    globalTrackOverrideDeg: null,
+    alternate: null,
+    alternateFrom: 'DEST',
+  };
+
+  // 1. When alternate is null, no alternate leg or alternate fuel is calculated
+  const noAltSummary = computeNavLog(waypoints, baseConfig, {});
+  assert.equal(noAltSummary.alternateLeg, null);
+  assert.equal(noAltSummary.fuelPlan.alternateFuelLiters, 0);
+
+  const selectedAlternate = {
+    name: 'VOBG (HAL Bengaluru)',
+    lat: 12.9499,
+    lng: 77.6682,
+    windDir: 270,
+    windSpd: 14,
+  };
+
+  // 2. Calculate Alternate Data from DEST (VOMY -> VOBG)
+  const fromDestSummary = computeNavLog(
+    waypoints,
+    { ...baseConfig, alternate: selectedAlternate, alternateFrom: 'DEST' },
+    {}
+  );
+  assert.ok(fromDestSummary.alternateLeg !== null);
+  assert.equal(fromDestSummary.alternateLeg?.fromRole, 'DEST');
+  assert.equal(fromDestSummary.alternateLeg?.fromName, 'VOMY (MYSORE)');
+  assert.equal(fromDestSummary.alternateLeg?.toName, 'VOBG (HAL Bengaluru)');
+
+  // 3. Calculate Alternate Data from DEP (VOCL -> VOBG)
+  const fromDepSummary = computeNavLog(
+    waypoints,
+    { ...baseConfig, alternate: selectedAlternate, alternateFrom: 'DEP' },
+    {}
+  );
+  assert.ok(fromDepSummary.alternateLeg !== null);
+  assert.equal(fromDepSummary.alternateLeg?.fromRole, 'DEP');
+  assert.equal(fromDepSummary.alternateLeg?.fromName, 'VOCL (CALICUT)');
+  assert.equal(fromDepSummary.alternateLeg?.toName, 'VOBG (HAL Bengaluru)');
+
+  // VOCL -> VOBG (~147.8 NM) is significantly longer than VOMY -> VOBG (~72.4 NM)
+  assert.ok(
+    (fromDepSummary.alternateLeg?.distanceNm || 0) >
+      (fromDestSummary.alternateLeg?.distanceNm || 0) + 50
+  );
+  assert.ok(
+    fromDepSummary.fuelPlan.alternateFuelLiters >
+      fromDestSummary.fuelPlan.alternateFuelLiters
+  );
+});
+
+test('computeRouteWeatherBounds and interpolateWeatherAtCoord compute free weather map grid bounds and interpolate upper-air vectors accurately', async () => {
+  const { computeRouteWeatherBounds, interpolateWeatherAtCoord } = await import(
+    './navlogMath'
+  );
+  const bounds = computeRouteWeatherBounds(
+    [
+      { lat: 11.1368, lng: 75.9553 },
+      { lat: 12.23, lng: 76.6558 },
+    ],
+    { lat: 12.9499, lng: 77.6682 }
+  );
+  assert.ok(bounds.minLat < 11.1368);
+  assert.ok(bounds.maxLat > 12.9499);
+  assert.ok(bounds.minLng < 75.9553);
+  assert.ok(bounds.maxLng > 77.6682);
+
+  const sampleGrid = [
+    {
+      lat: 11.0,
+      lng: 76.0,
+      windDir: 270,
+      windSpd: 14,
+      tempC: 12.0,
+      cloudCoverPct: 30,
+      precipMm: 0,
+    },
+    {
+      lat: 12.0,
+      lng: 77.0,
+      windDir: 290,
+      windSpd: 22,
+      tempC: 8.0,
+      cloudCoverPct: 70,
+      precipMm: 1.2,
+    },
+  ];
+
+  // Exact node match
+  const exact = interpolateWeatherAtCoord(sampleGrid, 11.0, 76.0);
+  assert.equal(exact.windDir, 270);
+  assert.equal(exact.windSpd, 14);
+  assert.equal(exact.tempC, 12.0);
+
+  // Midpoint interpolation
+  const mid = interpolateWeatherAtCoord(sampleGrid, 11.5, 76.5);
+  assert.ok(mid.windDir >= 278 && mid.windDir <= 284);
+  assert.equal(mid.windSpd, 18);
+  assert.equal(mid.tempC, 10.0);
+  assert.equal(mid.cloudCoverPct, 50);
+});
+
+test('getImdChannelById and formatImdScanTimestamps resolve IMD INSAT channels and format UTC/IST timestamps', async () => {
+  const { IMD_SATELLITE_CHANNELS, getImdChannelById, formatImdScanTimestamps } =
+    await import('./navlogMath');
+
+  assert.ok(IMD_SATELLITE_CHANNELS.length >= 7);
+
+  const ctbt = getImdChannelById('asia_ctbt');
+  assert.equal(ctbt.id, 'asia_ctbt');
+  assert.equal(
+    ctbt.upstreamUrl,
+    'https://mausam.imd.gov.in/Satellite/3Dasiasec_ctbt.jpg'
+  );
+
+  const fallback = getImdChannelById('unknown_channel');
+  assert.equal(fallback.id, 'asia_ir1');
+
+  // Verify HTTP Last-Modified formatting into both UTC and IST (UTC+05:30)
+  const lastModHeader = 'Sat, 31 Oct 2026 22:00:00 GMT';
+  const refNow = new Date('2026-10-31T22:25:00Z');
+  const formatted = formatImdScanTimestamps(lastModHeader, refNow);
+
+  assert.equal(formatted.utcString, '2026-10-31 22:00 UTC');
+  assert.equal(formatted.istString, '2026-11-01 03:30 IST');
+  assert.equal(formatted.ageMinutes, 25);
+});
+
+
+
+
