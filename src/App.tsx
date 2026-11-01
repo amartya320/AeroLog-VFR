@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  Download,
   Printer,
   Compass,
   Fuel,
@@ -646,97 +645,6 @@ export default function App() {
     });
   }, []);
 
-  const handleDownloadCsv = () => {
-    const roundOff = Boolean(config.roundOffValues);
-    const headers = [
-      'From',
-      'To',
-      'Track (deg)',
-      'Leg Dist (NM)',
-      'Covered (NM)',
-      'To Go (NM)',
-      'Time Taken (min)',
-      'ETA',
-      'G/S EST (kt)',
-      'Fuel EST (L)',
-      'Fuel Remaining (L)',
-      'Heading EST (deg)',
-      'Wind DIR (deg)',
-      'Wind SPD (kt)',
-    ];
-
-    const rows = navLogSummary.legs.map((l) => [
-      `"${l.fromName}"`,
-      `"${l.toName}"`,
-      l.trackDeg,
-      formatCalc(l.legDistNm, roundOff),
-      formatCalc(l.coveredDistNm, roundOff),
-      formatCalc(l.toGoDistNm, roundOff),
-      formatCalc(l.timeTakenMin, roundOff),
-      l.eta,
-      l.gsEstKt,
-      formatCalc(l.fuelEstLiters, roundOff),
-      formatCalc(l.fuelRemainingLiters, roundOff),
-      showMagneticHeading ? l.magHeadingEst : l.trueHeadingEst,
-      l.windDir,
-      l.windSpd,
-    ]);
-
-    const altRow = navLogSummary.alternateLeg
-      ? `\n"ALTERNATE (FROM ${navLogSummary.alternateLeg.fromRole}: ${navLogSummary.alternateLeg.fromName})","${navLogSummary.alternateLeg.toName}",${
-          navLogSummary.alternateLeg.trackDeg
-        },${formatCalc(navLogSummary.alternateLeg.distanceNm, roundOff)},"","",${formatCalc(
-          navLogSummary.alternateLeg.timeEstMin,
-          roundOff
-        )},${navLogSummary.alternateLeg.eta},${
-          navLogSummary.alternateLeg.gsEstKt
-        },${formatCalc(navLogSummary.fuelPlan.alternateFuelLiters, roundOff)},${formatCalc(
-          navLogSummary.alternateLeg.fuelRemainingAtAltLiters,
-          roundOff
-        )},${
-          showMagneticHeading
-            ? navLogSummary.alternateLeg.magHeadingEst
-            : navLogSummary.alternateLeg.trueHeadingEst
-        },${navLogSummary.alternateLeg.windDir},${navLogSummary.alternateLeg.windSpd}`
-      : '';
-
-    const fp = navLogSummary.fuelPlan;
-    const fuelSummaryRows = [
-      `\n"FUEL BREAKDOWN","Taxi Fuel (L)",,,,,,,,${formatCalc(fp.taxiFuelLiters, roundOff)},,,,`,
-      `"FUEL BREAKDOWN","Trip Fuel (L)",,,,,,,,${formatCalc(fp.tripFuelLiters, roundOff)},,,,`,
-      `"FUEL BREAKDOWN","Contingency (${fp.contingencyPercent}%)",,,,,,,,${formatCalc(fp.contingencyFuelLiters, roundOff)},,,,`,
-      `"FUEL BREAKDOWN","Alternate Fuel (L)",,,,,,,,${formatCalc(fp.alternateFuelLiters, roundOff)},,,,`,
-      `"FUEL BREAKDOWN","Holding Fuel (${fp.holdingTimeMin} min)",,,,,,,,${formatCalc(fp.holdingFuelLiters, roundOff)},,,,`,
-      `"FUEL BREAKDOWN","Total Block Fuel Required (L)",,,,,,,,${formatCalc(fp.totalBlockFuelRequiredLiters, roundOff)},,,,`,
-    ].join('\n');
-
-    const csvContent =
-      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n') +
-      `\n"TOTALS","${navLogSummary.legs.length} Legs","",${formatCalc(
-        navLogSummary.totalDistanceNm,
-        roundOff
-      )},${formatCalc(navLogSummary.totalDistanceNm, roundOff)},${formatCalc(0, roundOff)},${formatCalc(
-        navLogSummary.totalTimeMin,
-        roundOff
-      )},${navLogSummary.finalEta},${formatCalc(
-        navLogSummary.averageGsKt,
-        roundOff
-      )},${formatCalc(navLogSummary.totalFuelRequiredLiters, roundOff)},${formatCalc(
-        navLogSummary.finalFuelRemainingLiters,
-        roundOff
-      )},"","",""` +
-      altRow +
-      fuelSummaryRows;
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `flight-navlog-${waypoints[0]?.name || 'route'}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div id="top" className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden">
       {/* Top Navigation Bar (Strict 3-Zone Contract + Mobile Section Jump Strip) */}
@@ -794,7 +702,7 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: Dark Mode Toggle + Primary Export Action */}
+          {/* Zone 3: Dark Mode Toggle */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <button
               id="dark-mode-toggle"
@@ -824,21 +732,6 @@ export default function App() {
                   <span>Dark Mode</span>
                 </>
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadCsv}
-              className={`px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-                darkMode
-                  ? 'bg-sky-600 text-white hover:bg-sky-500'
-                  : 'bg-slate-900 text-white hover:bg-slate-800'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>
-                Export <span className="hidden sm:inline">NavLog </span>CSV
-              </span>
             </button>
           </div>
         </div>
