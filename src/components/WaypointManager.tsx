@@ -7,6 +7,7 @@ import {
   Download,
   ArrowUpDown,
   Wind,
+  RefreshCw,
   GitCommitHorizontal,
   Waypoints,
   MapPin,
@@ -48,6 +49,8 @@ interface WaypointManagerProps {
   onReverseRoute: () => void;
   onClearAllWaypoints: () => void;
   onImportWaypoints: (newWaypoints: Waypoint[]) => void;
+  onSyncAllWinds?: () => void;
+  isSyncingWinds?: boolean;
 }
 
 export const WaypointManager: React.FC<WaypointManagerProps> = ({
@@ -63,6 +66,8 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
   onReverseRoute,
   onClearAllWaypoints,
   onImportWaypoints,
+  onSyncAllWinds,
+  isSyncingWinds = false,
 }) => {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -137,27 +142,34 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {waypoints.length > 0 && (
-              <button
-                type="button"
-                onClick={onClearAllWaypoints}
-                className="px-2 py-1 text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear
-              </button>
-            )}
-
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={waypoints.length < 2}
               onClick={onReverseRoute}
-              className="px-2 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 rounded flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 text-xs font-bold bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white rounded-md shadow-2xs flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
-              <ArrowUpDown className="w-3 h-3" />
-              Reverse
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              Reverse Route (DEP ↔ DEST)
             </button>
+
+            {onSyncAllWinds && (
+              <button
+                type="button"
+                onClick={onSyncAllWinds}
+                disabled={isSyncingWinds || waypoints.length === 0}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 shrink-0 ${isSyncingWinds ? 'animate-spin' : ''}`}
+                />
+                <span>
+                  {isSyncingWinds
+                    ? 'Syncing Winds...'
+                    : `Sync Winds (${selectedAltitudeFt.toLocaleString()} ft)`}
+                </span>
+              </button>
+            )}
 
             <input
               ref={fileInputRef}
@@ -169,21 +181,32 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-2 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 rounded flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
-              <Upload className="w-3 h-3" />
-              Import KML
+              <Upload className="w-3.5 h-3.5" />
+              Import Waypoints
             </button>
 
             <button
               type="button"
               disabled={waypoints.length === 0}
               onClick={handleExportKml}
-              className="px-2 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 rounded flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+              className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 border border-slate-200 rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
-              <Download className="w-3 h-3" />
-              Export KML
+              <Download className="w-3.5 h-3.5" />
+              Export Waypoints
             </button>
+
+            {waypoints.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearAllWaypoints}
+                className="px-2.5 py-1.5 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear
+              </button>
+            )}
           </div>
         </div>
 

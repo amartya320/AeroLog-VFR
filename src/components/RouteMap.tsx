@@ -333,7 +333,6 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   const [clickMode, setClickMode] = useState<MapClickActionMode>('waypoint');
   const [fitTrigger, setFitTrigger] = useState(0);
 
-  const selectedLeg = legs[selectedLegIndex];
   const pressureHpa = getClosestAltitudeLevel(selectedAltitudeFt).pressureHpa;
 
   const centerLat =
@@ -556,7 +555,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       </div>
 
       {/* Main Map Viewport: Either Google Maps/Earth OR Free Interactive Weather Map OR IMD Satellite */}
-      <div className="relative h-[320px] sm:h-[400px] lg:h-[440px] w-full bg-slate-900">
+      <div className="relative h-[460px] sm:h-[560px] lg:h-[640px] w-full bg-slate-900">
         {viewMode === 'route' ? (
           <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
             {/* Floating Search Box on top-left of Google Map */}
@@ -687,54 +686,6 @@ export const RouteMap: React.FC<RouteMapProps> = ({
             departureTime={departureTime}
           />
         )}
-      </div>
-
-      {/* Bottom Selected Leg & Alternate Telemetry Strip */}
-      <div className="px-3 sm:px-4 py-2 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-        {selectedLeg ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="font-semibold text-slate-900">
-              Leg {selectedLeg.index}: {selectedLeg.fromName} → {selectedLeg.toName}
-            </span>
-            <span className="font-mono text-slate-700">
-              Track: <strong>{String(selectedLeg.trackDeg).padStart(3, '0')}°T</strong>
-            </span>
-            <span className="font-mono text-slate-700">
-              Dist: <strong>{selectedLeg.legDistNm.toFixed(1)} NM</strong>
-            </span>
-            <span className="font-mono text-slate-700">
-              Wind ({selectedAltitudeFt.toLocaleString()} ft):{' '}
-              <strong>
-                {String(selectedLeg.windDir).padStart(3, '0')}°/{selectedLeg.windSpd} kt
-              </strong>
-            </span>
-            <span className="font-mono text-slate-700">
-              HDG: <strong>{String(selectedLeg.trueHeadingEst).padStart(3, '0')}°T</strong>
-            </span>
-            <span className="font-mono text-slate-700">
-              G/S: <strong>{selectedLeg.gsEstKt} kt</strong>
-            </span>
-            {computedAlternate && (
-              <span className="font-mono text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded">
-                ALT ({computedAlternate.fromRole} → {computedAlternate.toName}):{' '}
-                <strong>
-                  {String(computedAlternate.trackDeg).padStart(3, '0')}°T ·{' '}
-                  {computedAlternate.distanceNm.toFixed(1)} NM ·{' '}
-                  {computedAlternate.timeEstMin.toFixed(1)} min
-                </strong>
-              </span>
-            )}
-          </div>
-        ) : (
-          <span className="text-slate-500">
-            Select Departure & Destination or click on the map to add route waypoints.
-          </span>
-        )}
-        <span className="text-slate-500 hidden xl:inline">
-          {routeTrackMode === 'straight'
-            ? 'Straight-Line Mode: En-route waypoints stick to DEP→DEST line · Drag pins along line'
-            : 'Freeform Mode: Drag pins anywhere · Click en-route pin to remove'}
-        </span>
       </div>
     </div>
   );

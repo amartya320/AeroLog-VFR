@@ -40,7 +40,6 @@ import { fetchUpperAirWindsBatchClient } from './utils/weatherClient';
 import { RouteMap } from './components/RouteMap';
 import { NavLogTable } from './components/NavLogTable';
 import { WaypointManager } from './components/WaypointManager';
-import { WindTriangleInspector } from './components/WindTriangleInspector';
 import { AlternatePlanner } from './components/AlternatePlanner';
 import { EditableNumberInput } from './components/EditableNumberInput';
 
@@ -757,7 +756,7 @@ export default function App() {
             href="#wind-triangle"
             className="px-1 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-center truncate"
           >
-            3. Wpts/E6B
+            3. Waypoints
           </a>
           <a
             href="#alternate-planner"
@@ -1178,56 +1177,53 @@ export default function App() {
             isSyncingWinds={isSyncingWinds}
           />
 
-          <div
-            id="wind-triangle"
-            className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch"
-          >
-            <div className="lg:col-span-6 flex flex-col">
-              <WaypointManager
-                waypoints={waypoints}
-                selectedAltitudeFt={config.selectedAltitudeFt}
-                routeTrackMode={config.routeTrackMode || 'straight'}
-                onChangeRouteTrackMode={handleChangeRouteTrackMode}
-                onSetEndpointWaypoint={handleSetEndpointWaypoint}
-                onAddWaypoint={(name, lat, lng, explicitFraction) =>
-                  handleAddWaypointFromMap(lat, lng, name, explicitFraction)
-                }
-                onGenerateEvenWaypoints={handleGenerateEvenWaypoints}
-                onUpdateWaypoint={handleUpdateWaypoint}
-                onUpdateWaypointCoord={handleUpdateWaypointCoord}
-                onMoveWaypoint={handleMoveWaypoint}
-                onRemoveWaypoint={handleRemoveWaypoint}
-                onReverseRoute={handleReverseRoute}
-                onClearAllWaypoints={handleClearFlightPlan}
-                onImportWaypoints={(imported) => {
-                  const nextWpts =
-                    (config.routeTrackMode || 'straight') === 'straight'
-                      ? snapWaypointsToStraightLine(imported)
-                      : imported;
-                  setWaypoints(nextWpts);
-                  setOverrides({});
-                  setSelectedLegIndex(0);
-                  setConfig((prev) => ({ ...prev, alternate: null }));
-                  fetchUpperAirWinds(
-                    nextWpts,
-                    config.selectedAltitudeFt,
-                    config.departureDate,
-                    config.airborneTime,
-                    null,
-                    config.windModel || 'ecmwf_ifs025'
-                  );
-                }}
-              />
-            </div>
-
-            <div className="lg:col-span-6 flex flex-col">
-              <WindTriangleInspector
-                leg={navLogSummary.legs[safeSelectedLegIndex]}
-                config={config}
-                legsCount={navLogSummary.legs.length}
-                onSelectLeg={setSelectedLegIndex}
-              />
-            </div>
+          <div id="wind-triangle" className="flex flex-col">
+            <WaypointManager
+              waypoints={waypoints}
+              selectedAltitudeFt={config.selectedAltitudeFt}
+              routeTrackMode={config.routeTrackMode || 'straight'}
+              onChangeRouteTrackMode={handleChangeRouteTrackMode}
+              onSetEndpointWaypoint={handleSetEndpointWaypoint}
+              onAddWaypoint={(name, lat, lng, explicitFraction) =>
+                handleAddWaypointFromMap(lat, lng, name, explicitFraction)
+              }
+              onGenerateEvenWaypoints={handleGenerateEvenWaypoints}
+              onUpdateWaypoint={handleUpdateWaypoint}
+              onUpdateWaypointCoord={handleUpdateWaypointCoord}
+              onMoveWaypoint={handleMoveWaypoint}
+              onRemoveWaypoint={handleRemoveWaypoint}
+              onReverseRoute={handleReverseRoute}
+              onClearAllWaypoints={handleClearFlightPlan}
+              onImportWaypoints={(imported) => {
+                const nextWpts =
+                  (config.routeTrackMode || 'straight') === 'straight'
+                    ? snapWaypointsToStraightLine(imported)
+                    : imported;
+                setWaypoints(nextWpts);
+                setOverrides({});
+                setSelectedLegIndex(0);
+                setConfig((prev) => ({ ...prev, alternate: null }));
+                fetchUpperAirWinds(
+                  nextWpts,
+                  config.selectedAltitudeFt,
+                  config.departureDate,
+                  config.airborneTime,
+                  null,
+                  config.windModel || 'ecmwf_ifs025'
+                );
+              }}
+              onSyncAllWinds={() =>
+                fetchUpperAirWinds(
+                  waypoints,
+                  config.selectedAltitudeFt,
+                  config.departureDate,
+                  config.airborneTime,
+                  config.alternate,
+                  config.windModel || 'ecmwf_ifs025'
+                )
+              }
+              isSyncingWinds={isSyncingWinds}
+            />
           </div>
         </section>
 
