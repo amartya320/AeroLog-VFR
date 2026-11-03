@@ -16,6 +16,7 @@ import {
   Moon,
   Sun,
 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import {
   ALTITUDE_LEVELS,
   AlternateAerodrome,
@@ -1359,6 +1360,7 @@ export default function App() {
           Upper-Air Wind & Weather Map: Open-Meteo Free Pressure-Level API · IMD INSAT-3DR/3DS
         </span>
       </footer>
+      <Analytics />
     </div>
   );
 }
