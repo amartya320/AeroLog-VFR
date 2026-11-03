@@ -86,6 +86,8 @@ interface RouteMapProps {
   onRemoveWaypoint: (id: string) => void;
   onSyncAllWinds: () => void;
   isSyncingWinds: boolean;
+  windSyncSuccess?: boolean;
+  windSyncCount?: number;
 }
 
 /**
@@ -325,6 +327,8 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   onRemoveWaypoint,
   onSyncAllWinds,
   isSyncingWinds,
+  windSyncSuccess = false,
+  windSyncCount = 0,
 }) => {
   const [viewMode, setViewMode] = useState<'route' | 'weather_map' | 'imd_satellite'>('route');
   const [mapTypeId, setMapTypeId] = useState<
@@ -537,17 +541,24 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           )}
 
           <button
+            id="sync-map-winds-btn"
             type="button"
             onClick={onSyncAllWinds}
-            disabled={isSyncingWinds}
-            className="px-2.5 py-1 text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+            disabled={isSyncingWinds || (waypoints.length === 0 && !alternate)}
+            className={`px-2.5 py-1 text-xs font-semibold border rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0 ${
+              windSyncSuccess
+                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-400'
+                : 'bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-200'
+            }`}
           >
             <RefreshCw
               className={`w-3.5 h-3.5 shrink-0 ${isSyncingWinds ? 'animate-spin' : ''}`}
             />
             <span className="truncate">
               {isSyncingWinds
-                ? 'Syncing...'
+                ? 'Syncing Winds...'
+                : windSyncSuccess
+                ? `✓ Winds Synced (${selectedAltitudeFt.toLocaleString()} ft)`
                 : `Sync Winds (${selectedAltitudeFt.toLocaleString()} ft)`}
             </span>
           </button>
@@ -676,6 +687,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
             departureTime={departureTime}
             selectedLegIndex={selectedLegIndex}
             onSelectLeg={onSelectLeg}
+            windSyncCount={windSyncCount}
           />
         ) : (
           <ImdSatelliteView

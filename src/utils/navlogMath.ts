@@ -243,6 +243,18 @@ export function normalizeDegrees(deg: number): number {
 }
 
 /**
+ * Round a wind direction in degrees True (0-359) to the nearest 10th degree (0, 10, 20, ..., 350)
+ * matching standard aviation meteorology (METAR / WINTEM / FD) reporting conventions.
+ */
+export function roundWindDirToTenDeg(deg: number): number {
+  if (!isFinite(deg) || isNaN(deg)) return 0;
+  const mod = deg % 360;
+  const normalized = mod < 0 ? mod + 360 : mod;
+  const rounded = Math.round(normalized / 10) * 10;
+  return rounded === 360 ? 0 : rounded;
+}
+
+/**
  * Great-circle distance between two coordinates in Nautical Miles (NM)
  */
 export function calculateDistanceNm(
@@ -1317,7 +1329,7 @@ export function interpolateWeatherAtCoord(
       return {
         lat,
         lng,
-        windDir: node.windDir,
+        windDir: roundWindDirToTenDeg(node.windDir),
         windSpd: node.windSpd,
         tempC: node.tempC,
         cloudCoverPct: node.cloudCoverPct,
@@ -1337,7 +1349,7 @@ export function interpolateWeatherAtCoord(
 
   const avgU = uSum / weightSum;
   const avgV = vSum / weightSum;
-  const interpDir = normalizeDegrees((Math.atan2(avgU, avgV) * 180) / Math.PI);
+  const interpDir = roundWindDirToTenDeg((Math.atan2(avgU, avgV) * 180) / Math.PI);
   const interpSpd = Math.max(1, Math.round(spdSum / weightSum));
   const interpTemp = Math.round((tempSum / weightSum) * 10) / 10;
   const interpCloud = Math.min(100, Math.max(0, Math.round(cloudSum / weightSum)));

@@ -59,7 +59,9 @@ export const EditableNumberInput: React.FC<EditableNumberInputProps> = ({
     const trimmed = draft.trim();
     if (trimmed === '' || isNaN(parseFloat(trimmed))) {
       const fallback = fallbackOnEmptyBlur !== undefined ? fallbackOnEmptyBlur : min ?? 0;
-      onChange(fallback);
+      if (fallback !== value) {
+        onChange(fallback);
+      }
       setDraft(String(fallback));
       return;
     }
@@ -67,7 +69,9 @@ export const EditableNumberInput: React.FC<EditableNumberInputProps> = ({
     let finalVal = parseFloat(trimmed);
     if (min !== undefined) finalVal = Math.max(min, finalVal);
     if (max !== undefined) finalVal = Math.min(max, finalVal);
-    onChange(finalVal);
+    if (finalVal !== value) {
+      onChange(finalVal);
+    }
     setDraft(String(finalVal));
   };
 

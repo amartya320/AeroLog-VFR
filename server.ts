@@ -6,10 +6,15 @@ import {
   WIND_MODEL_OPTIONS,
   WindModelId,
   getClosestAltitudeLevel,
-  normalizeDegrees,
   getImdChannelById,
   formatImdScanTimestamps,
 } from './src/utils/navlogMath';
+import {
+  WindPointRequest,
+  fetchUpperAirWindsBatchClient,
+  fetchWeatherGridClient,
+  parseTargetDateTime,
+} from './src/utils/weatherClient';
 
 dotenv.config();
 
@@ -17,248 +22,6 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
-
-interface WindPointRequest {
-  id: string;
-  lat: number;
-  lng: number;
-}
-
-interface WindPointResponse {
-  id: string;
-  lat: number;
-  lng: number;
-  altitudeFt: number;
-  pressureHpa: number;
-  windyLevel: string;
-  windDir: number; // Degrees True (0-359)
-  windSpd: number; // Knots
-  source: string;
-  departureDate: string;
-  departureTime: string;
-}
-
-/**
- * Parse YYYY-MM-DD and HH:MM in Indian Standard Time (IST, UTC+05:30)
- */
-function parseTargetDateTime(departureDate?: string, departureTime?: string) {
-  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-  const defaultIstDate = istNow.toISOString().slice(0, 10);
-  const defaultIstTime = istNow.toISOString().slice(11, 16);
-
-  const safeDate =
-    departureDate && /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
-      ? departureDate.trim()
-      : defaultIstDate;
-
-  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(
-    (departureTime || defaultIstTime).trim()
-  );
-  const hour = timeMatch ? Math.min(23, Math.max(0, parseInt(timeMatch[1], 10))) : 6;
-  const minute = timeMatch ? Math.min(59, Math.max(0, parseInt(timeMatch[2], 10))) : 30;
-  const roundedHour = minute >= 30 ? (hour + 1) % 24 : hour;
-
-  const paddedHour = String(hour).padStart(2, '0');
-  const paddedMin = String(minute).padStart(2, '0');
-  const formattedTime = `${paddedHour}:${paddedMin}`;
-  const isoHourPrefix = `${safeDate}T${String(roundedHour).padStart(2, '0')}:00`;
-
-  // Parse explicitly in IST (+05:30)
-  const parsedMs = Date.parse(`${safeDate}T${formattedTime}:00+05:30`);
-  const targetTimestampMs = isNaN(parsedMs) ? Date.now() : parsedMs;
-
-  // Day-of-year integer (1..366) for synoptic / seasonal diurnal adjustment
-  const [yr, mo, dy] = safeDate.split('-').map(Number);
-  const dayOfYear = Math.floor(
-    (Date.UTC(yr, (mo || 1) - 1, dy || 1) - Date.UTC(yr, 0, 0)) / 86400000
-  );
-
-  return {
-    safeDate,
-    formattedTime,
-    hour,
-    minute,
-    roundedHour,
-    isoHourPrefix,
-    targetTimestampMs,
-    dayOfYear,
-  };
-}
-
-/**
- * Fetch real upper-air pressure-level wind for a single coordinate, altitude level, NWP model, and estimated departure date/time (IST)
- * Uses Open-Meteo Upper-Air Pressure Level API (100% free, unshuffled ECMWF IFS / NOAA GFS / DWD ICON data)
- */
-async function fetchUpperAirWindForPoint(
-  pt: WindPointRequest,
-  altitudeFt: number,
-  departureDate?: string,
-  departureTime?: string,
-  windModel: WindModelId = 'ecmwf_ifs025'
-): Promise<WindPointResponse> {
-  const levelInfo = getClosestAltitudeLevel(altitudeFt);
-  const dt = parseTargetDateTime(departureDate, departureTime);
-  const modelMeta =
-    WIND_MODEL_OPTIONS.find((m) => m.id === windModel) || WIND_MODEL_OPTIONS[1];
-
-  // 1. Live Open-Meteo Pressure-Level Upper-Air Wind Forecast (ECMWF IFS, NOAA GFS, DWD ICON, or Multi-Model Blend) in IST (Asia/Kolkata)
-  try {
-    const hpa = levelInfo.pressureHpa;
-    const spdParam = `wind_speed_${hpa}hPa`;
-    const dirParam = `wind_direction_${hpa}hPa`;
-    const isBlend = !windModel || windModel === 'best_match';
-    const modelParam = isBlend
-      ? '&models=ecmwf_ifs025,gfs_seamless,icon_seamless'
-      : `&models=${windModel}`;
-    const forecastDays = windModel === 'icon_seamless' || isBlend ? 7 : 10;
-
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${pt.lat.toFixed(
-      4
-    )}&longitude=${pt.lng.toFixed(
-      4
-    )}&current=wind_speed_10m,wind_direction_10m&hourly=${spdParam},${dirParam}&wind_speed_unit=kn&timezone=Asia%2FKolkata&past_days=2&forecast_days=${forecastDays}${modelParam}`;
-
-    const res = await fetch(url, { signal: AbortSignal.timeout(6500) });
-    if (res.ok) {
-      const data = (await res.json()) as {
-        hourly?: {
-          time?: string[];
-          [key: string]: number[] | string[] | undefined;
-        };
-        current?: { wind_speed_10m?: number; wind_direction_10m?: number };
-      };
-
-      const timeArr = data.hourly?.time;
-      let matchedIdx = -1;
-      if (Array.isArray(timeArr)) {
-        matchedIdx = timeArr.findIndex((t) => t.startsWith(dt.isoHourPrefix));
-      }
-      const targetIdx = matchedIdx >= 0 ? matchedIdx : dt.roundedHour;
-      const isDateFallback = matchedIdx < 0;
-
-      let resolvedSpd: number | undefined;
-      let resolvedDir: number | undefined;
-
-      if (isBlend && data.hourly) {
-        const subModels = ['ecmwf_ifs025', 'gfs_seamless', 'icon_seamless'];
-        const speeds: number[] = [];
-        let sinSum = 0;
-        let cosSum = 0;
-        for (const sm of subModels) {
-          const sArr = data.hourly[`${spdParam}_${sm}`] as number[] | undefined;
-          const dArr = data.hourly[`${dirParam}_${sm}`] as number[] | undefined;
-          const sVal = Array.isArray(sArr) ? sArr[targetIdx] : undefined;
-          const dVal = Array.isArray(dArr) ? dArr[targetIdx] : undefined;
-          if (typeof sVal === 'number' && typeof dVal === 'number') {
-            speeds.push(sVal);
-            const rad = (dVal * Math.PI) / 180;
-            sinSum += Math.sin(rad);
-            cosSum += Math.cos(rad);
-          }
-        }
-        if (speeds.length > 0) {
-          resolvedSpd = speeds.reduce((a, b) => a + b, 0) / speeds.length;
-          resolvedDir = normalizeDegrees((Math.atan2(sinSum, cosSum) * 180) / Math.PI);
-        }
-      } else if (data.hourly) {
-        const spdArr = (data.hourly[spdParam] ??
-          data.hourly[`${spdParam}_${windModel}`]) as number[] | undefined;
-        const dirArr = (data.hourly[dirParam] ??
-          data.hourly[`${dirParam}_${windModel}`]) as number[] | undefined;
-        if (
-          Array.isArray(spdArr) &&
-          Array.isArray(dirArr) &&
-          typeof spdArr[targetIdx] === 'number' &&
-          typeof dirArr[targetIdx] === 'number'
-        ) {
-          resolvedSpd = spdArr[targetIdx];
-          resolvedDir = dirArr[targetIdx];
-        }
-      }
-
-      if (typeof resolvedSpd === 'number' && typeof resolvedDir === 'number') {
-        const seasonalAngle = ((dt.dayOfYear % 365) / 365) * 2 * Math.PI;
-        const diurnalAngle = ((dt.hour + dt.minute / 60) / 24) * 2 * Math.PI;
-        const dirDelta = isDateFallback
-          ? Math.round(Math.sin(seasonalAngle + diurnalAngle) * 12)
-          : 0;
-        const spdDelta = isDateFallback
-          ? Math.round(Math.cos(seasonalAngle - diurnalAngle) * 3)
-          : 0;
-
-        return {
-          id: pt.id,
-          lat: pt.lat,
-          lng: pt.lng,
-          altitudeFt: levelInfo.altitudeFt,
-          pressureHpa: levelInfo.pressureHpa,
-          windyLevel: levelInfo.windyLevel,
-          windDir: normalizeDegrees(resolvedDir + dirDelta),
-          windSpd: Math.max(1, Math.round(resolvedSpd + spdDelta)),
-          source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
-          departureDate: dt.safeDate,
-          departureTime: dt.formattedTime,
-        };
-      }
-    }
-  } catch {
-    // Fall through to deterministic synoptic atmospheric model
-  }
-
-  // 2. Deterministic synoptic upper-air wind model parameterized by coordinate, altitude, windModel, departureDate, and departureTime (IST)
-  const altFactor = Math.max(1, altitudeFt / 1000);
-  const latRad = (pt.lat * Math.PI) / 180;
-  const lngRad = (pt.lng * Math.PI) / 180;
-  const seasonalRad = ((dt.dayOfYear % 365) / 365) * 2 * Math.PI;
-  const diurnalRad = ((dt.hour + dt.minute / 60) / 24) * 2 * Math.PI;
-
-  const modelDirOffset =
-    windModel === 'gfs_seamless'
-      ? -12
-      : windModel === 'icon_seamless'
-      ? 9
-      : windModel === 'best_match'
-      ? -4
-      : 0;
-  const modelSpdOffset =
-    windModel === 'gfs_seamless'
-      ? -2
-      : windModel === 'icon_seamless'
-      ? 3
-      : windModel === 'best_match'
-      ? 1
-      : 0;
-
-  const baseDir =
-    250 +
-    modelDirOffset +
-    Math.round(
-      Math.sin(latRad * 3 + lngRad * 2 + seasonalRad) * 35 +
-        Math.cos(diurnalRad) * 14 +
-        altFactor * 2.5
-    );
-  const baseSpd = Math.round(
-    10 +
-      modelSpdOffset +
-      altFactor * 2.2 +
-      Math.cos(latRad * 2 - lngRad + seasonalRad) * 5 +
-      Math.sin(diurnalRad) * 4
-  );
-
-  return {
-    id: pt.id,
-    lat: pt.lat,
-    lng: pt.lng,
-    altitudeFt: levelInfo.altitudeFt,
-    pressureHpa: levelInfo.pressureHpa,
-    windyLevel: levelInfo.windyLevel,
-    windDir: normalizeDegrees(baseDir),
-    windSpd: Math.max(4, baseSpd),
-    source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
-    departureDate: dt.safeDate,
-    departureTime: dt.formattedTime,
-  };
-}
 
 app.post('/api/winds', async (req, res) => {
   try {
@@ -268,12 +31,14 @@ app.post('/api/winds', async (req, res) => {
       departureDate,
       departureTime,
       windModel = 'ecmwf_ifs025',
+      forceRefresh = false,
     } = req.body as {
       points?: WindPointRequest[];
       altitudeFt?: number;
       departureDate?: string;
       departureTime?: string;
       windModel?: WindModelId;
+      forceRefresh?: boolean;
     };
 
     if (!Array.isArray(points) || points.length === 0) {
@@ -281,127 +46,23 @@ app.post('/api/winds', async (req, res) => {
       return;
     }
 
-    const results = await Promise.all(
-      points.map((pt) =>
-        fetchUpperAirWindForPoint(
-          pt,
-          Number(altitudeFt) || 5000,
-          departureDate,
-          departureTime,
-          windModel
-        )
-      )
-    );
-
-    res.json({
+    const result = await fetchUpperAirWindsBatchClient({
+      points,
       altitudeFt: Number(altitudeFt) || 5000,
-      departureDate: results[0]?.departureDate || departureDate,
-      departureTime: results[0]?.departureTime || departureTime,
+      departureDate,
+      departureTime,
       windModel,
-      level: getClosestAltitudeLevel(Number(altitudeFt) || 5000),
-      winds: results,
+      forceRefresh: Boolean(forceRefresh),
+      skipServerFallback: true,
     });
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Failed to fetch upper-air wind data',
     });
   }
 });
-
-const weatherGridCache = new Map<
-  string,
-  { timestamp: number; payload: Record<string, unknown> }
->();
-
-/**
- * Compute deterministic synoptic fallback node for a given coordinate, altitude, date/time, and model
- */
-function buildSynopticGridNode(
-  lat: number,
-  lng: number,
-  altitudeFt: number,
-  dt: ReturnType<typeof parseTargetDateTime>,
-  windModel: WindModelId
-) {
-  const altFactor = Math.max(1, altitudeFt / 1000);
-  const latRad = (lat * Math.PI) / 180;
-  const lngRad = (lng * Math.PI) / 180;
-  const seasonalRad = ((dt.dayOfYear % 365) / 365) * 2 * Math.PI;
-  const diurnalRad = ((dt.hour + dt.minute / 60) / 24) * 2 * Math.PI;
-
-  const modelDirOffset =
-    windModel === 'gfs_seamless'
-      ? -12
-      : windModel === 'icon_seamless'
-      ? 9
-      : windModel === 'best_match'
-      ? -4
-      : 0;
-  const modelSpdOffset =
-    windModel === 'gfs_seamless'
-      ? -2
-      : windModel === 'icon_seamless'
-      ? 3
-      : windModel === 'best_match'
-      ? 1
-      : 0;
-
-  const windDir = normalizeDegrees(
-    250 +
-      modelDirOffset +
-      Math.round(
-        Math.sin(latRad * 3 + lngRad * 2 + seasonalRad) * 35 +
-          Math.cos(diurnalRad) * 14 +
-          altFactor * 2.5
-      )
-  );
-  const windSpd = Math.max(
-    4,
-    Math.round(
-      10 +
-        modelSpdOffset +
-        altFactor * 2.2 +
-        Math.cos(latRad * 2 - lngRad + seasonalRad) * 5 +
-        Math.sin(diurnalRad) * 4
-    )
-  );
-
-  // Standard ISA lapse rate ~2°C per 1000 ft from ~26°C tropical sea level
-  const isaBaseTemp = 26 - altFactor * 1.98;
-  const tempC =
-    Math.round(
-      (isaBaseTemp +
-        Math.sin(latRad * 2 + diurnalRad) * 2.2 +
-        (modelSpdOffset * 0.4)) *
-        10
-    ) / 10;
-
-  const cloudCoverPct = Math.min(
-    100,
-    Math.max(
-      5,
-      Math.round(
-        42 +
-          Math.sin(latRad * 4 - lngRad * 3 + diurnalRad) * 32 +
-          Math.cos(seasonalRad) * 12
-      )
-    )
-  );
-  const precipMm =
-    cloudCoverPct > 68
-      ? Math.round(((cloudCoverPct - 65) * 0.14) * 10) / 10
-      : 0;
-
-  return {
-    lat: Number(lat.toFixed(4)),
-    lng: Number(lng.toFixed(4)),
-    windDir,
-    windSpd,
-    tempC,
-    cloudCoverPct,
-    precipMm,
-  };
-}
 
 app.post('/api/weather-grid', async (req, res) => {
   try {
@@ -436,152 +97,32 @@ app.post('/api/weather-grid', async (req, res) => {
     const modelMeta =
       WIND_MODEL_OPTIONS.find((m) => m.id === windModel) || WIND_MODEL_OPTIONS[1];
 
-    const cacheKey = [
-      minLat.toFixed(2),
-      maxLat.toFixed(2),
-      minLng.toFixed(2),
-      maxLng.toFixed(2),
-      safeRows,
-      safeCols,
-      levelInfo.pressureHpa,
-      dt.safeDate,
-      dt.roundedHour,
+    const gridResult = await fetchWeatherGridClient({
+      minLat,
+      maxLat,
+      minLng,
+      maxLng,
+      rows: safeRows,
+      cols: safeCols,
+      altitudeFt: levelInfo.altitudeFt,
+      departureDate: dt.safeDate,
+      departureTime: dt.formattedTime,
       windModel,
-    ].join('|');
+    });
 
-    const cached = weatherGridCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
-      res.json(cached.payload);
-      return;
-    }
-
-    const coords: Array<{ lat: number; lng: number }> = [];
-    for (let r = 0; r < safeRows; r++) {
-      const lat =
-        safeRows === 1
-          ? (minLat + maxLat) / 2
-          : minLat + ((maxLat - minLat) * r) / (safeRows - 1);
-      for (let c = 0; c < safeCols; c++) {
-        const lng =
-          safeCols === 1
-            ? (minLng + maxLng) / 2
-            : minLng + ((maxLng - minLng) * c) / (safeCols - 1);
-        coords.push({
-          lat: Number(lat.toFixed(4)),
-          lng: Number(lng.toFixed(4)),
-        });
-      }
-    }
-
-    const hpa = levelInfo.pressureHpa;
-    const spdParam = `wind_speed_${hpa}hPa`;
-    const dirParam = `wind_direction_${hpa}hPa`;
-    const tempParam = `temperature_${hpa}hPa`;
-    const isBlend = !windModel || windModel === 'best_match';
-    const actualModel = isBlend ? 'ecmwf_ifs025' : windModel;
-    const forecastDays = actualModel === 'icon_seamless' ? 7 : 10;
-
-    let nodes = coords.map((pt) =>
-      buildSynopticGridNode(pt.lat, pt.lng, levelInfo.altitudeFt, dt, windModel)
-    );
-    let dataSource = `${modelMeta.shortLabel} Live Open-Meteo Grid (${hpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`;
-
-    try {
-      const latList = coords.map((c) => c.lat.toFixed(4)).join(',');
-      const lngList = coords.map((c) => c.lng.toFixed(4)).join(',');
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${latList}&longitude=${lngList}&hourly=${spdParam},${dirParam},${tempParam},cloud_cover,precipitation&wind_speed_unit=kn&timezone=Asia%2FKolkata&past_days=2&forecast_days=${forecastDays}&models=${actualModel}`;
-
-      const apiRes = await fetch(url, { signal: AbortSignal.timeout(7000) });
-      if (apiRes.ok) {
-        const rawJson = await apiRes.json();
-        const items = Array.isArray(rawJson) ? rawJson : [rawJson];
-        if (items.length === coords.length) {
-          nodes = coords.map((pt, idx) => {
-            const fallbackNode = buildSynopticGridNode(
-              pt.lat,
-              pt.lng,
-              levelInfo.altitudeFt,
-              dt,
-              windModel
-            );
-            const item = items[idx] as {
-              hourly?: {
-                time?: string[];
-                [key: string]: number[] | string[] | undefined;
-              };
-            };
-            const timeArr = item?.hourly?.time;
-            let matchedIdx = -1;
-            if (Array.isArray(timeArr)) {
-              matchedIdx = timeArr.findIndex((t) => t.startsWith(dt.isoHourPrefix));
-            }
-            const targetIdx = matchedIdx >= 0 ? matchedIdx : dt.roundedHour;
-            const hourly = item?.hourly || {};
-
-            const spdArr = (hourly[spdParam] ??
-              hourly[`${spdParam}_${actualModel}`]) as number[] | undefined;
-            const dirArr = (hourly[dirParam] ??
-              hourly[`${dirParam}_${actualModel}`]) as number[] | undefined;
-            const tempArr = (hourly[tempParam] ??
-              hourly[`${tempParam}_${actualModel}`]) as number[] | undefined;
-            const cloudArr = (hourly['cloud_cover'] ??
-              hourly[`cloud_cover_${actualModel}`]) as number[] | undefined;
-            const precipArr = (hourly['precipitation'] ??
-              hourly[`precipitation_${actualModel}`]) as number[] | undefined;
-
-            const rawSpd = Array.isArray(spdArr) ? spdArr[targetIdx] : undefined;
-            const rawDir = Array.isArray(dirArr) ? dirArr[targetIdx] : undefined;
-            const rawTemp = Array.isArray(tempArr) ? tempArr[targetIdx] : undefined;
-            const rawCloud = Array.isArray(cloudArr) ? cloudArr[targetIdx] : undefined;
-            const rawPrecip = Array.isArray(precipArr) ? precipArr[targetIdx] : undefined;
-
-            return {
-              lat: pt.lat,
-              lng: pt.lng,
-              windDir:
-                typeof rawDir === 'number'
-                  ? normalizeDegrees(rawDir)
-                  : fallbackNode.windDir,
-              windSpd:
-                typeof rawSpd === 'number'
-                  ? Math.max(1, Math.round(rawSpd))
-                  : fallbackNode.windSpd,
-              tempC:
-                typeof rawTemp === 'number'
-                  ? Math.round(rawTemp * 10) / 10
-                  : fallbackNode.tempC,
-              cloudCoverPct:
-                typeof rawCloud === 'number'
-                  ? Math.min(100, Math.max(0, Math.round(rawCloud)))
-                  : fallbackNode.cloudCoverPct,
-              precipMm:
-                typeof rawPrecip === 'number'
-                  ? Math.max(0, Math.round(rawPrecip * 10) / 10)
-                  : fallbackNode.precipMm,
-            };
-          });
-        }
-      }
-    } catch {
-      dataSource = `${modelMeta.shortLabel} Synoptic Upper-Air Field (${hpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`;
-    }
-
-    const payload = {
+    res.json({
       altitudeFt: levelInfo.altitudeFt,
       pressureHpa: levelInfo.pressureHpa,
       windModel,
       modelLabel: modelMeta.shortLabel,
       departureDate: dt.safeDate,
       departureTime: dt.formattedTime,
-      source: dataSource,
+      source: gridResult.source,
       rows: safeRows,
       cols: safeCols,
       bounds: { minLat, maxLat, minLng, maxLng },
-      nodes,
-    };
-
-    weatherGridCache.set(cacheKey, { timestamp: Date.now(), payload });
-    res.json(payload);
+      nodes: gridResult.nodes,
+    });
   } catch (err) {
     res.status(500).json({
       error:

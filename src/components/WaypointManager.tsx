@@ -51,6 +51,7 @@ interface WaypointManagerProps {
   onImportWaypoints: (newWaypoints: Waypoint[]) => void;
   onSyncAllWinds?: () => void;
   isSyncingWinds?: boolean;
+  windSyncSuccess?: boolean;
 }
 
 export const WaypointManager: React.FC<WaypointManagerProps> = ({
@@ -68,6 +69,7 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
   onImportWaypoints,
   onSyncAllWinds,
   isSyncingWinds = false,
+  windSyncSuccess = false,
 }) => {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -155,10 +157,15 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
 
             {onSyncAllWinds && (
               <button
+                id="sync-route-winds-btn"
                 type="button"
                 onClick={onSyncAllWinds}
                 disabled={isSyncingWinds || waypoints.length === 0}
-                className="px-2.5 py-1.5 text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-200 rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
+                className={`px-2.5 py-1.5 text-xs font-semibold border rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0 ${
+                  windSyncSuccess
+                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-400'
+                    : 'bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-200'
+                }`}
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 shrink-0 ${isSyncingWinds ? 'animate-spin' : ''}`}
@@ -166,6 +173,8 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                 <span>
                   {isSyncingWinds
                     ? 'Syncing Winds...'
+                    : windSyncSuccess
+                    ? `✓ Winds Synced (${selectedAltitudeFt.toLocaleString()} ft)`
                     : `Sync Winds (${selectedAltitudeFt.toLocaleString()} ft)`}
                 </span>
               </button>
@@ -431,10 +440,28 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                   <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
                     {/* Waypoint Wind badge / inline editor */}
                     <div
-                      title={`Upper-air wind at ${selectedAltitudeFt.toLocaleString()} ft`}
-                      className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-mono text-[11px]"
+                      title={
+                        wp.windSource
+                          ? `Wind source: ${wp.windSource}`
+                          : `Upper-air wind at ${selectedAltitudeFt.toLocaleString()} ft`
+                      }
+                      className={`flex items-center gap-1 border rounded px-1.5 py-0.5 font-mono text-[11px] transition-colors ${
+                        windSyncSuccess
+                          ? 'bg-emerald-50 border-emerald-300'
+                          : wp.windSource === 'Manual'
+                          ? 'bg-amber-50/70 border-amber-300'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
                     >
-                      <Wind className="w-3 h-3 text-sky-700" />
+                      <Wind
+                        className={`w-3 h-3 ${
+                          windSyncSuccess
+                            ? 'text-emerald-700'
+                            : wp.windSource === 'Manual'
+                            ? 'text-amber-700'
+                            : 'text-sky-700'
+                        }`}
+                      />
                       <input
                         type="number"
                         min={0}

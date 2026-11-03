@@ -32,6 +32,7 @@ import {
   getCurrentIstDateTime,
   insertEnRouteWaypoint,
   restoreFreeformWaypoints,
+  roundWindDirToTenDeg,
   snapWaypointsToStraightLine,
   updateEndpointWaypoint,
 } from './utils/navlogMath';
@@ -63,6 +64,9 @@ export default function App() {
   const [showMagneticHeading, setShowMagneticHeading] = useState<boolean>(false);
   const [paperBlankRowsCount, setPaperBlankRowsCount] = useState<number>(3);
   const [isSyncingWinds, setIsSyncingWinds] = useState<boolean>(false);
+  const [windSyncSuccess, setWindSyncSuccess] = useState<boolean>(false);
+  const [windSyncCount, setWindSyncCount] = useState<number>(0);
+  const syncSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
     'Upper-air winds synced via Open-Meteo ECMWF IFS for 5,000 ft (850 hPa)'
   );
@@ -103,7 +107,7 @@ export default function App() {
     setConfig((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  // Fetch upper-air winds from backend /api/winds using altitude, departureDate, departureTime, and windModel
+  // Fetch upper-air winds from Open-Meteo / backend /api/winds using altitude, departureDate, departureTime, and windModel
   const fetchUpperAirWinds = useCallback(
     async (
       targetWaypoints: Waypoint[],
@@ -111,10 +115,20 @@ export default function App() {
       departureDate: string,
       departureTime: string,
       targetAlternate: AlternateAerodrome | null,
-      windModel: WindModelId = 'ecmwf_ifs025'
+      windModel: WindModelId = 'ecmwf_ifs025',
+      forceRefresh: boolean = false
     ) => {
       if (targetWaypoints.length === 0 && !targetAlternate) return;
+      if (syncSuccessTimerRef.current) {
+        clearTimeout(syncSuccessTimerRef.current);
+        syncSuccessTimerRef.current = null;
+      }
+      setWindSyncSuccess(false);
       setIsSyncingWinds(true);
+      if (forceRefresh) {
+        setWindSyncCount((c) => c + 1);
+      }
+
       try {
         const pointsPayload = [
           ...targetWaypoints.map((w) => ({
@@ -133,22 +147,28 @@ export default function App() {
             : []),
         ];
 
-        const data = await fetchUpperAirWindsBatchClient({
-          altitudeFt,
-          departureDate,
-          departureTime,
-          windModel,
-          points: pointsPayload,
-        });
+        const [data] = await Promise.all([
+          fetchUpperAirWindsBatchClient({
+            altitudeFt,
+            departureDate,
+            departureTime,
+            windModel,
+            points: pointsPayload,
+            forceRefresh,
+          }),
+          forceRefresh
+            ? new Promise((resolve) => setTimeout(resolve, 350))
+            : Promise.resolve(),
+        ]);
 
         const windMap = new Map(data.winds.map((w) => [w.id, w]));
         setWaypoints((prev) =>
-          prev.map((wp) => {
-            const matched = windMap.get(wp.id);
+          prev.map((wp, idx) => {
+            const matched = windMap.get(wp.id) || data.winds[idx];
             if (!matched) return wp;
             return {
               ...wp,
-              windDir: matched.windDir,
+              windDir: roundWindDirToTenDeg(matched.windDir),
               windSpd: matched.windSpd,
               windSource: matched.source,
             };
@@ -177,7 +197,7 @@ export default function App() {
                   ...prev,
                   alternate: {
                     ...prev.alternate,
-                    windDir: altWind.windDir,
+                    windDir: roundWindDirToTenDeg(altWind.windDir),
                     windSpd: altWind.windSpd,
                     windSource: altWind.source,
                   },
@@ -190,6 +210,13 @@ export default function App() {
           data.winds[0]?.source ||
           `${data.level.pressureHpa} hPa (${altitudeFt} ft · ${departureDate} ${departureTime})`;
         setWindSyncStatus(`Synced: ${firstSource}`);
+
+        if (forceRefresh) {
+          setWindSyncSuccess(true);
+          syncSuccessTimerRef.current = setTimeout(() => {
+            setWindSyncSuccess(false);
+          }, 2200);
+        }
       } catch {
         const lvl = getClosestAltitudeLevel(altitudeFt);
         setWindSyncStatus(
@@ -219,6 +246,26 @@ export default function App() {
     windModel: config.windModel || 'ecmwf_ifs025',
   };
 
+  const handleManualSyncWinds = useCallback(() => {
+    if (
+      typeof document !== 'undefined' &&
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.tagName === 'INPUT'
+    ) {
+      document.activeElement.blur();
+    }
+    const cur = latestSyncRef.current;
+    fetchUpperAirWinds(
+      cur.waypoints,
+      cur.selectedAltitudeFt,
+      cur.departureDate,
+      cur.airborneTime,
+      cur.alternate,
+      cur.windModel,
+      true
+    );
+  }, [fetchUpperAirWinds]);
+
   // Automatically sync upper-air winds on initial mount and whenever config.windModel changes
   useEffect(() => {
     const cur = latestSyncRef.current;
@@ -228,7 +275,8 @@ export default function App() {
       cur.departureDate,
       cur.airborneTime,
       cur.alternate,
-      config.windModel || 'ecmwf_ifs025'
+      config.windModel || 'ecmwf_ifs025',
+      false
     );
   }, [config.windModel, fetchUpperAirWinds]);
 
@@ -1164,17 +1212,10 @@ export default function App() {
             onUpdateWaypointCoord={handleUpdateWaypointCoord}
             onUpdateAlternateCoord={handleUpdateAlternateCoord}
             onRemoveWaypoint={handleRemoveWaypoint}
-            onSyncAllWinds={() =>
-              fetchUpperAirWinds(
-                waypoints,
-                config.selectedAltitudeFt,
-                config.departureDate,
-                config.airborneTime,
-                config.alternate,
-                config.windModel || 'ecmwf_ifs025'
-              )
-            }
+            onSyncAllWinds={handleManualSyncWinds}
             isSyncingWinds={isSyncingWinds}
+            windSyncSuccess={windSyncSuccess}
+            windSyncCount={windSyncCount}
           />
 
           <div id="wind-triangle" className="flex flex-col">
@@ -1209,20 +1250,13 @@ export default function App() {
                   config.departureDate,
                   config.airborneTime,
                   null,
-                  config.windModel || 'ecmwf_ifs025'
+                  config.windModel || 'ecmwf_ifs025',
+                  true
                 );
               }}
-              onSyncAllWinds={() =>
-                fetchUpperAirWinds(
-                  waypoints,
-                  config.selectedAltitudeFt,
-                  config.departureDate,
-                  config.airborneTime,
-                  config.alternate,
-                  config.windModel || 'ecmwf_ifs025'
-                )
-              }
+              onSyncAllWinds={handleManualSyncWinds}
               isSyncingWinds={isSyncingWinds}
+              windSyncSuccess={windSyncSuccess}
             />
           </div>
         </section>

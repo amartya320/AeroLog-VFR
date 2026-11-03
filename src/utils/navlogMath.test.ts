@@ -10,6 +10,8 @@ import {
   computeAlternateLeg,
   computeFuelPlanBreakdown,
   parseKmlWaypoints,
+  roundWindDirToTenDeg,
+  interpolateWeatherAtCoord,
   FlightConfig,
   Waypoint,
 } from './navlogMath';
@@ -575,8 +577,33 @@ test('straight-line track mode snaps intermediate waypoints onto the DEP-DEST li
   assert.equal(generated[3].lat, 11.75);
 });
 
+test('roundWindDirToTenDeg rounds all received and interpolated wind directions to nearest 10th degree', async () => {
+  assert.equal(roundWindDirToTenDeg(77), 80);
+  assert.equal(roundWindDirToTenDeg(73), 70);
+  assert.equal(roundWindDirToTenDeg(65), 70);
+  assert.equal(roundWindDirToTenDeg(268), 270);
+  assert.equal(roundWindDirToTenDeg(354), 350);
+  assert.equal(roundWindDirToTenDeg(355), 0);
+  assert.equal(roundWindDirToTenDeg(359), 0);
+  assert.equal(roundWindDirToTenDeg(4), 0);
+  assert.equal(roundWindDirToTenDeg(-8), 350);
 
+  // Weather grid interpolation also rounds to nearest 10th degree
+  const interp = interpolateWeatherAtCoord(
+    [
+      { lat: 15.0, lng: 76.0, windDir: 77, windSpd: 14, tempC: 16, cloudCoverPct: 30, precipMm: 0 },
+      { lat: 16.0, lng: 77.0, windDir: 83, windSpd: 16, tempC: 15, cloudCoverPct: 40, precipMm: 0 },
+    ],
+    15.5,
+    76.5
+  );
+  assert.ok(interp);
+  assert.equal(interp.windDir % 10, 0);
+  assert.equal(interp.windDir, 80);
 
-
-
-
+  // Synoptic fallback node in weatherClient also produces a multiple of 10 degrees
+  const { buildSynopticGridNode, parseTargetDateTime } = await import('./weatherClient');
+  const dt = parseTargetDateTime('2026-11-02', '09:30');
+  const synopticNode = buildSynopticGridNode(17.3056, 76.9531, 5000, dt, 'ecmwf_ifs025');
+  assert.equal(synopticNode.windDir % 10, 0);
+});

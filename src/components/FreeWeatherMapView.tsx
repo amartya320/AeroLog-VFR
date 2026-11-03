@@ -42,6 +42,7 @@ interface FreeWeatherMapViewProps {
   departureTime: string;
   selectedLegIndex: number;
   onSelectLeg: (idx: number) => void;
+  windSyncCount?: number;
 }
 
 interface StreamParticle {
@@ -172,6 +173,7 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
   departureTime,
   selectedLegIndex,
   onSelectLeg,
+  windSyncCount = 0,
 }) => {
   const [activeLayer, setActiveLayer] = useState<WeatherMapLayerId>('wind-streamlines');
   const [animateStreamlines, setAnimateStreamlines] = useState<boolean>(true);
@@ -241,7 +243,7 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
     [selectedAltitudeFt]
   );
 
-  // Fetch 5x5 Open-Meteo upper-air weather grid directly in browser whenever route bounds, altitude, date/time, or windModel changes
+  // Fetch 5x5 Open-Meteo upper-air weather grid directly in browser whenever route bounds, altitude, date/time, windModel, or windSyncCount changes
   useEffect(() => {
     let cancelled = false;
     const gridParams = {
@@ -255,6 +257,7 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
       departureDate,
       departureTime,
       windModel,
+      forceRefresh: windSyncCount > 0,
     };
 
     const fetchGrid = async () => {
@@ -288,6 +291,7 @@ export const FreeWeatherMapView: React.FC<FreeWeatherMapViewProps> = ({
     departureDate,
     departureTime,
     windModel,
+    windSyncCount,
   ]);
 
   const probedWeather = useMemo(
