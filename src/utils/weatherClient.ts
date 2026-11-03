@@ -4,6 +4,7 @@ import {
   WeatherGridNode,
   getClosestAltitudeLevel,
   normalizeDegrees,
+  roundWindDirectionDeg,
   getImdChannelById,
   formatImdScanTimestamps,
   ImdSatelliteChannelId,
@@ -179,7 +180,7 @@ export function buildSynopticGridNode(
       ? 1
       : 0;
 
-  const windDir = normalizeDegrees(
+  const windDir = roundWindDirectionDeg(
     250 +
       modelDirOffset +
       Math.round(
@@ -251,11 +252,6 @@ export async function fetchUpperAirWindForPointClient(
   const modelMeta =
     WIND_MODEL_OPTIONS.find((m) => m.id === windModel) || WIND_MODEL_OPTIONS[1];
 
-  // Altitude shear adjustment when interpolating from nearest standard pressure level (e.g. 950 -> 925 hPa)
-  const hpaDiff = queryHpa - levelInfo.pressureHpa; // positive if target is higher altitude than queryHpa
-  const levelShearSpd = Math.round(hpaDiff * 0.04);
-  const levelShearDir = Math.round(hpaDiff * 0.08);
-
   try {
     const spdParam = `wind_speed_${queryHpa}hPa`;
     const dirParam = `wind_direction_${queryHpa}hPa`;
@@ -280,7 +276,7 @@ export async function fetchUpperAirWindForPointClient(
         };
       };
 
-      const { index: targetIdx, isDateFallback } = resolveHourlyTimeIndex(
+      const { index: targetIdx } = resolveHourlyTimeIndex(
         data.hourly?.time,
         dt
       );
@@ -326,17 +322,6 @@ export async function fetchUpperAirWindForPointClient(
       }
 
       if (typeof resolvedSpd === 'number' && typeof resolvedDir === 'number') {
-        const seasonalAngle = ((dt.dayOfYear % 365) / 365) * 2 * Math.PI;
-        const diurnalAngle = ((dt.hour + dt.minute / 60) / 24) * 2 * Math.PI;
-        const dirDelta =
-          (isDateFallback
-            ? Math.round(Math.sin(seasonalAngle + diurnalAngle) * 10)
-            : 0) + levelShearDir;
-        const spdDelta =
-          (isDateFallback
-            ? Math.round(Math.cos(seasonalAngle - diurnalAngle) * 2)
-            : 0) + levelShearSpd;
-
         return {
           id: pt.id,
           lat: pt.lat,
@@ -344,8 +329,8 @@ export async function fetchUpperAirWindForPointClient(
           altitudeFt: levelInfo.altitudeFt,
           pressureHpa: levelInfo.pressureHpa,
           windyLevel: levelInfo.windyLevel,
-          windDir: normalizeDegrees(resolvedDir + dirDelta),
-          windSpd: Math.max(1, Math.round(resolvedSpd + spdDelta)),
+          windDir: roundWindDirectionDeg(resolvedDir),
+          windSpd: Math.max(0, Math.round(resolvedSpd)),
           source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
           departureDate: dt.safeDate,
           departureTime: dt.formattedTime,
@@ -378,8 +363,14 @@ export async function fetchUpperAirWindForPointClient(
   };
 }
 
+const clientWindPointCache = new Map<
+  string,
+  { timestamp: number; windDir: number; windSpd: number; source: string }
+>();
+
 /**
- * Fetch upper-air winds for all waypoints directly in the browser (works on Vercel static builds & localhost)
+ * Fetch upper-air winds for all waypoints directly in the browser using a single batched
+ * Open-Meteo request (plus caching) so multiple waypoints never trigger HTTP 429.
  */
 export async function fetchUpperAirWindsBatchClient(params: {
   points: WindPointRequest[];
@@ -397,26 +388,164 @@ export async function fetchUpperAirWindsBatchClient(params: {
 }> {
   const safeAlt = Number(params.altitudeFt) || 5000;
   const safeModel: WindModelId = params.windModel || 'ecmwf_ifs025';
+  const levelInfo = getClosestAltitudeLevel(safeAlt);
+  const queryHpa = getOpenMeteoQueryHpa(levelInfo.pressureHpa);
   const dt = parseTargetDateTime(params.departureDate, params.departureTime);
+  const modelMeta =
+    WIND_MODEL_OPTIONS.find((m) => m.id === safeModel) || WIND_MODEL_OPTIONS[1];
 
-  const winds = await Promise.all(
-    params.points.map((pt) =>
-      fetchUpperAirWindForPointClient(
-        pt,
-        safeAlt,
-        dt.safeDate,
-        dt.formattedTime,
-        safeModel
-      )
-    )
-  );
+  if (params.points.length === 0) {
+    return {
+      altitudeFt: safeAlt,
+      departureDate: dt.safeDate,
+      departureTime: dt.formattedTime,
+      windModel: safeModel,
+      level: levelInfo,
+      winds: [],
+    };
+  }
+
+  const makePointKey = (pt: WindPointRequest) =>
+    `${pt.lat.toFixed(3)}|${pt.lng.toFixed(3)}|${levelInfo.pressureHpa}|${dt.safeDate}|${dt.roundedHour}|${safeModel}`;
+
+  const uncachedPoints = params.points.filter((pt) => {
+    const cached = clientWindPointCache.get(makePointKey(pt));
+    return !cached || Date.now() - cached.timestamp >= 5 * 60 * 1000;
+  });
+
+  if (uncachedPoints.length > 0) {
+    try {
+      const spdParam = `wind_speed_${queryHpa}hPa`;
+      const dirParam = `wind_direction_${queryHpa}hPa`;
+      const isBlend = !safeModel || safeModel === 'best_match';
+      const modelParam = isBlend
+        ? '&models=ecmwf_ifs025,gfs_seamless,icon_seamless'
+        : `&models=${safeModel}`;
+      const forecastDays = safeModel === 'icon_seamless' || isBlend ? 7 : 10;
+
+      const latList = uncachedPoints.map((p) => p.lat.toFixed(4)).join(',');
+      const lngList = uncachedPoints.map((p) => p.lng.toFixed(4)).join(',');
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${latList}&longitude=${lngList}&hourly=${spdParam},${dirParam}&wind_speed_unit=kn&timezone=Asia%2FKolkata&past_days=2&forecast_days=${forecastDays}${modelParam}`;
+
+      const res = await fetch(url, { signal: AbortSignal.timeout(6500) });
+      if (res.ok) {
+        const rawJson = await res.json();
+        const items = Array.isArray(rawJson) ? rawJson : [rawJson];
+        if (items.length === uncachedPoints.length) {
+          for (let i = 0; i < uncachedPoints.length; i++) {
+            const pt = uncachedPoints[i];
+            const data = items[i] as {
+              hourly?: {
+                time?: string[];
+                [key: string]: number[] | string[] | undefined;
+              };
+            };
+            const { index: targetIdx } = resolveHourlyTimeIndex(
+              data?.hourly?.time,
+              dt
+            );
+            let resolvedSpd: number | undefined;
+            let resolvedDir: number | undefined;
+
+            if (isBlend && data?.hourly) {
+              const subModels = ['ecmwf_ifs025', 'gfs_seamless', 'icon_seamless'];
+              const speeds: number[] = [];
+              let sinSum = 0;
+              let cosSum = 0;
+              for (const sm of subModels) {
+                const sArr = data.hourly[`${spdParam}_${sm}`] as number[] | undefined;
+                const dArr = data.hourly[`${dirParam}_${sm}`] as number[] | undefined;
+                const sVal = Array.isArray(sArr) ? sArr[targetIdx] : undefined;
+                const dVal = Array.isArray(dArr) ? dArr[targetIdx] : undefined;
+                if (typeof sVal === 'number' && typeof dVal === 'number') {
+                  speeds.push(sVal);
+                  const rad = (dVal * Math.PI) / 180;
+                  sinSum += Math.sin(rad);
+                  cosSum += Math.cos(rad);
+                }
+              }
+              if (speeds.length > 0) {
+                resolvedSpd = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+                resolvedDir = normalizeDegrees((Math.atan2(sinSum, cosSum) * 180) / Math.PI);
+              }
+            } else if (data?.hourly) {
+              const spdArr = (data.hourly[spdParam] ??
+                data.hourly[`${spdParam}_${safeModel}`]) as number[] | undefined;
+              const dirArr = (data.hourly[dirParam] ??
+                data.hourly[`${dirParam}_${safeModel}`]) as number[] | undefined;
+              if (
+                Array.isArray(spdArr) &&
+                Array.isArray(dirArr) &&
+                typeof spdArr[targetIdx] === 'number' &&
+                typeof dirArr[targetIdx] === 'number'
+              ) {
+                resolvedSpd = spdArr[targetIdx];
+                resolvedDir = dirArr[targetIdx];
+              }
+            }
+
+            if (typeof resolvedSpd === 'number' && typeof resolvedDir === 'number') {
+              clientWindPointCache.set(makePointKey(pt), {
+                timestamp: Date.now(),
+                windDir: roundWindDirectionDeg(resolvedDir),
+                windSpd: Math.max(0, Math.round(resolvedSpd)),
+                source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall back to synoptic per-point calculation below
+    }
+  }
+
+  const winds: WindPointResponse[] = params.points.map((pt) => {
+    const cached = clientWindPointCache.get(makePointKey(pt));
+    if (cached) {
+      return {
+        id: pt.id,
+        lat: pt.lat,
+        lng: pt.lng,
+        altitudeFt: levelInfo.altitudeFt,
+        pressureHpa: levelInfo.pressureHpa,
+        windyLevel: levelInfo.windyLevel,
+        windDir: roundWindDirectionDeg(cached.windDir),
+        windSpd: cached.windSpd,
+        source: cached.source,
+        departureDate: dt.safeDate,
+        departureTime: dt.formattedTime,
+      };
+    }
+
+    const synoptic = buildSynopticGridNode(
+      pt.lat,
+      pt.lng,
+      safeAlt,
+      dt,
+      safeModel
+    );
+    return {
+      id: pt.id,
+      lat: pt.lat,
+      lng: pt.lng,
+      altitudeFt: levelInfo.altitudeFt,
+      pressureHpa: levelInfo.pressureHpa,
+      windyLevel: levelInfo.windyLevel,
+      windDir: roundWindDirectionDeg(synoptic.windDir),
+      windSpd: synoptic.windSpd,
+      source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
+      departureDate: dt.safeDate,
+      departureTime: dt.formattedTime,
+    };
+  });
 
   return {
     altitudeFt: safeAlt,
     departureDate: dt.safeDate,
     departureTime: dt.formattedTime,
     windModel: safeModel,
-    level: getClosestAltitudeLevel(safeAlt),
+    level: levelInfo,
     winds,
   };
 }
@@ -543,8 +672,6 @@ export async function fetchWeatherGridClient(params: {
       const items = Array.isArray(rawJson) ? rawJson : [rawJson];
       if (items.length === coords.length) {
         const hpaDiff = queryHpa - levelInfo.pressureHpa;
-        const levelShearSpd = Math.round(hpaDiff * 0.04);
-        const levelShearDir = Math.round(hpaDiff * 0.08);
         const levelTempDelta = -(hpaDiff * 0.06);
 
         const liveNodes = coords.map((pt, idx) => {
@@ -585,11 +712,11 @@ export async function fetchWeatherGridClient(params: {
             lng: pt.lng,
             windDir:
               typeof rawDir === 'number'
-                ? normalizeDegrees(rawDir + levelShearDir)
+                ? roundWindDirectionDeg(rawDir)
                 : fallbackNode.windDir,
             windSpd:
               typeof rawSpd === 'number'
-                ? Math.max(1, Math.round(rawSpd + levelShearSpd))
+                ? Math.max(0, Math.round(rawSpd))
                 : fallbackNode.windSpd,
             tempC:
               typeof rawTemp === 'number'

@@ -575,6 +575,50 @@ test('straight-line track mode snaps intermediate waypoints onto the DEP-DEST li
   assert.equal(generated[3].lat, 11.75);
 });
 
+test('roundWindDirectionDeg rounds wind degrees to nearest 10th degree (034=030, 056=060) while keeping wind speed exact', async () => {
+  const { roundWindDirectionDeg, computeNavLog } = await import('./navlogMath');
+
+  assert.equal(roundWindDirectionDeg(34), 30);
+  assert.equal(roundWindDirectionDeg(56), 60);
+  assert.equal(roundWindDirectionDeg(267), 270);
+  assert.equal(roundWindDirectionDeg(124), 120);
+  assert.equal(roundWindDirectionDeg(356), 0);
+
+  const waypoints: Waypoint[] = [
+    { id: 'w1', name: 'DEP', lat: 17.3056, lng: 76.9531, windDir: 34, windSpd: 13 },
+    { id: 'w2', name: 'DEST', lat: 17.628, lng: 75.9348, windDir: 56, windSpd: 17 },
+  ];
+
+  const config: FlightConfig = {
+    cruiseTasKt: 85,
+    fuelFlowLph: 15,
+    initialFuelLiters: 120,
+    taxiFuelLiters: 5,
+    contingencyPercent: 5,
+    holdingFuelLiters: 11.3,
+    reserveFuelLiters: 11.3,
+    departureDate: '2026-11-03',
+    airborneTime: '06:00',
+    selectedAltitudeFt: 5000,
+    magneticVariationDeg: -1,
+    globalTrackOverrideDeg: null,
+    alternate: {
+      name: 'VOBG',
+      lat: 12.9499,
+      lng: 77.6682,
+      windDir: 34,
+      windSpd: 19,
+    },
+  };
+
+  const summary = computeNavLog(waypoints, config, {});
+  assert.equal(summary.legs[0].windDir, 60); // 056 -> 060
+  assert.equal(summary.legs[0].windSpd, 17); // exact speed preserved
+  assert.equal(summary.alternateLeg?.windDir, 30); // 034 -> 030
+  assert.equal(summary.alternateLeg?.windSpd, 19); // exact speed preserved
+});
+
+
 
 
 

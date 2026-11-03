@@ -7,6 +7,7 @@ import {
   WindModelId,
   getClosestAltitudeLevel,
   normalizeDegrees,
+  roundWindDirectionDeg,
   getImdChannelById,
   formatImdScanTimestamps,
 } from './src/utils/navlogMath';
@@ -134,7 +135,6 @@ async function fetchUpperAirWindForPoint(
         matchedIdx = timeArr.findIndex((t) => t.startsWith(dt.isoHourPrefix));
       }
       const targetIdx = matchedIdx >= 0 ? matchedIdx : dt.roundedHour;
-      const isDateFallback = matchedIdx < 0;
 
       let resolvedSpd: number | undefined;
       let resolvedDir: number | undefined;
@@ -177,15 +177,6 @@ async function fetchUpperAirWindForPoint(
       }
 
       if (typeof resolvedSpd === 'number' && typeof resolvedDir === 'number') {
-        const seasonalAngle = ((dt.dayOfYear % 365) / 365) * 2 * Math.PI;
-        const diurnalAngle = ((dt.hour + dt.minute / 60) / 24) * 2 * Math.PI;
-        const dirDelta = isDateFallback
-          ? Math.round(Math.sin(seasonalAngle + diurnalAngle) * 12)
-          : 0;
-        const spdDelta = isDateFallback
-          ? Math.round(Math.cos(seasonalAngle - diurnalAngle) * 3)
-          : 0;
-
         return {
           id: pt.id,
           lat: pt.lat,
@@ -193,8 +184,8 @@ async function fetchUpperAirWindForPoint(
           altitudeFt: levelInfo.altitudeFt,
           pressureHpa: levelInfo.pressureHpa,
           windyLevel: levelInfo.windyLevel,
-          windDir: normalizeDegrees(resolvedDir + dirDelta),
-          windSpd: Math.max(1, Math.round(resolvedSpd + spdDelta)),
+          windDir: roundWindDirectionDeg(resolvedDir),
+          windSpd: Math.max(0, Math.round(resolvedSpd)),
           source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
           departureDate: dt.safeDate,
           departureTime: dt.formattedTime,
@@ -252,7 +243,7 @@ async function fetchUpperAirWindForPoint(
     altitudeFt: levelInfo.altitudeFt,
     pressureHpa: levelInfo.pressureHpa,
     windyLevel: levelInfo.windyLevel,
-    windDir: normalizeDegrees(baseDir),
+    windDir: roundWindDirectionDeg(baseDir),
     windSpd: Math.max(4, baseSpd),
     source: `${modelMeta.shortLabel} (${levelInfo.pressureHpa} hPa · ${dt.safeDate} ${dt.formattedTime} IST)`,
     departureDate: dt.safeDate,
@@ -346,7 +337,7 @@ function buildSynopticGridNode(
       ? 1
       : 0;
 
-  const windDir = normalizeDegrees(
+  const windDir = roundWindDirectionDeg(
     250 +
       modelDirOffset +
       Math.round(
@@ -540,11 +531,11 @@ app.post('/api/weather-grid', async (req, res) => {
               lng: pt.lng,
               windDir:
                 typeof rawDir === 'number'
-                  ? normalizeDegrees(rawDir)
+                  ? roundWindDirectionDeg(rawDir)
                   : fallbackNode.windDir,
               windSpd:
                 typeof rawSpd === 'number'
-                  ? Math.max(1, Math.round(rawSpd))
+                  ? Math.max(0, Math.round(rawSpd))
                   : fallbackNode.windSpd,
               tempC:
                 typeof rawTemp === 'number'

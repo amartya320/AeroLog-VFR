@@ -243,6 +243,15 @@ export function normalizeDegrees(deg: number): number {
 }
 
 /**
+ * Round wind direction degrees given from wind data to the nearest 10° (0, 10, 20, ..., 350)
+ * while keeping wind speed exact.
+ */
+export function roundWindDirectionDeg(deg: number): number {
+  if (!isFinite(deg) || isNaN(deg)) return 0;
+  return normalizeDegrees(Math.round(deg / 10) * 10);
+}
+
+/**
  * Great-circle distance between two coordinates in Nautical Miles (NM)
  */
 export function calculateDistanceNm(
@@ -741,8 +750,8 @@ export function computeAlternateLeg(
     alternate.lng
   );
 
-  const windDir = normalizeDegrees(alternate.windDir ?? originWp.windDir ?? 0);
-  const windSpd = Math.max(0, Math.round(alternate.windSpd ?? originWp.windSpd ?? 0));
+  const windDir = roundWindDirectionDeg(alternate.windDir ?? originWp.windDir ?? 0);
+  const windSpd = Math.max(0, alternate.windSpd ?? originWp.windSpd ?? 0);
   const windSource = alternate.windSource || originWp.windSource || 'Forecast';
 
   const windTriangle = solveWindTriangle(
@@ -999,9 +1008,9 @@ export function computeNavLog(
       ov.windDir !== undefined && !isNaN(ov.windDir)
         ? normalizeDegrees(ov.windDir)
         : toWp.windDir !== undefined
-        ? normalizeDegrees(toWp.windDir)
+        ? roundWindDirectionDeg(toWp.windDir)
         : fromWp.windDir !== undefined
-        ? normalizeDegrees(fromWp.windDir)
+        ? roundWindDirectionDeg(fromWp.windDir)
         : 0;
 
     const windSpd =
@@ -1065,7 +1074,7 @@ export function computeNavLog(
       coveredDistNm,
       toGoDistNm,
       windDir,
-      windSpd: Math.round(windSpd),
+      windSpd,
       windSource,
       wcaDeg: roundCalc(windTriangle.wcaDeg, roundOff),
       trueHeadingEst: windTriangle.trueHeadingDeg,
@@ -1337,7 +1346,7 @@ export function interpolateWeatherAtCoord(
 
   const avgU = uSum / weightSum;
   const avgV = vSum / weightSum;
-  const interpDir = normalizeDegrees((Math.atan2(avgU, avgV) * 180) / Math.PI);
+  const interpDir = roundWindDirectionDeg((Math.atan2(avgU, avgV) * 180) / Math.PI);
   const interpSpd = Math.max(1, Math.round(spdSum / weightSum));
   const interpTemp = Math.round((tempSum / weightSum) * 10) / 10;
   const interpCloud = Math.min(100, Math.max(0, Math.round(cloudSum / weightSum)));
