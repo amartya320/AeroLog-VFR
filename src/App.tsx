@@ -15,7 +15,6 @@ import {
   Hash,
   Moon,
   Sun,
-  HelpCircle,
 } from 'lucide-react';
 import {
   ALTITUDE_LEVELS,
@@ -43,7 +42,6 @@ import { NavLogTable } from './components/NavLogTable';
 import { WaypointManager } from './components/WaypointManager';
 import { AlternatePlanner } from './components/AlternatePlanner';
 import { EditableNumberInput } from './components/EditableNumberInput';
-import { TutorialModal } from './components/TutorialModal';
 
 export default function App() {
   const [activePresetId, setActivePresetId] = useState<string>(PRESET_ROUTES[0].id);
@@ -75,7 +73,6 @@ export default function App() {
       return false;
     }
   });
-  const [showTutorialModal, setShowTutorialModal] = useState<boolean>(true);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -704,19 +701,8 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: Tutorial + Dark Mode Toggle */}
+          {/* Zone 3: Dark Mode Toggle */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <button
-              id="open-tutorial-btn"
-              type="button"
-              onClick={() => setShowTutorialModal(true)}
-              aria-label="Open Quick-Start Tutorial"
-              className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold rounded-md border bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-            >
-              <HelpCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>Tutorial</span>
-            </button>
-
             <button
               id="dark-mode-toggle"
               type="button"
@@ -1373,11 +1359,6 @@ export default function App() {
           Upper-Air Wind & Weather Map: Open-Meteo Free Pressure-Level API · IMD INSAT-3DR/3DS
         </span>
       </footer>
-
-      <TutorialModal
-        isOpen={showTutorialModal}
-        onClose={() => setShowTutorialModal(false)}
-      />
     </div>
   );
 }
