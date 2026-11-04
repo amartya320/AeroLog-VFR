@@ -370,18 +370,18 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       : '+ Tap Map: Add WPT';
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col">
+    <div className="aerolog-card bg-white border border-slate-200/85 rounded-2xl overflow-hidden flex flex-col shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_30px_-5px_rgba(15,23,42,0.04)]">
       {/* Map Mode & Layer Header Bar */}
-      <div className="px-3 sm:px-4 py-2.5 border-b border-slate-200 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 bg-white">
+      <div className="aerolog-toolbar px-3.5 sm:px-4 py-3 border-b border-slate-200/80 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 bg-white">
         <div className="flex flex-wrap items-center gap-2">
           {/* Primary View Mode Switcher: Route Map vs Free Weather Map vs IMD Satellite */}
-          <div className="grid grid-cols-1 sm:flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto gap-0.5 sm:gap-0">
+          <div className="aerolog-segmented grid grid-cols-1 sm:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-full sm:w-auto gap-1 sm:gap-0.5">
             <button
               type="button"
               onClick={() => setViewMode('route')}
-              className={`px-2.5 py-1.5 sm:py-1 text-xs font-semibold rounded transition-colors flex items-center justify-center sm:justify-start gap-1.5 ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center sm:justify-start gap-1.5 whitespace-nowrap ${
                 viewMode === 'route'
-                  ? 'bg-slate-900 text-white shadow-2xs'
+                  ? 'bg-slate-900 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -391,9 +391,9 @@ export const RouteMap: React.FC<RouteMapProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('weather_map')}
-              className={`px-2.5 py-1.5 sm:py-1 text-xs font-semibold rounded transition-colors flex items-center justify-center sm:justify-start gap-1.5 ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center sm:justify-start gap-1.5 whitespace-nowrap ${
                 viewMode === 'weather_map'
-                  ? 'bg-sky-700 text-white shadow-2xs'
+                  ? 'bg-sky-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -405,9 +405,9 @@ export const RouteMap: React.FC<RouteMapProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('imd_satellite')}
-              className={`px-2.5 py-1.5 sm:py-1 text-xs font-semibold rounded transition-colors flex items-center justify-center sm:justify-start gap-1.5 ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center sm:justify-start gap-1.5 whitespace-nowrap ${
                 viewMode === 'imd_satellite'
-                  ? 'bg-indigo-700 text-white shadow-2xs'
+                  ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -418,7 +418,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
 
           {viewMode === 'route' && (
             <>
-              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto">
+              <div className="aerolog-segmented flex flex-wrap items-center gap-0.5 bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-full sm:w-auto">
                 {(
                   [
                     { id: 'hybrid', label: 'Earth Hybrid' },
@@ -431,7 +431,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                     key={mode.id}
                     type="button"
                     onClick={() => setMapTypeId(mode.id)}
-                    className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-medium rounded transition-colors text-center whitespace-nowrap ${
+                    className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-medium rounded-lg transition-all text-center whitespace-nowrap ${
                       mapTypeId === mode.id
                         ? 'bg-white text-slate-900 shadow-2xs font-semibold'
                         : 'text-slate-600 hover:text-slate-900'
@@ -446,16 +446,16 @@ export const RouteMap: React.FC<RouteMapProps> = ({
               <div
                 role="group"
                 aria-label="Map Track Mode"
-                className="flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto"
+                className="aerolog-segmented flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-full sm:w-auto gap-0.5"
               >
                 <button
                   type="button"
                   aria-pressed={routeTrackMode === 'straight'}
                   onClick={() => onChangeRouteTrackMode('straight')}
                   title="Intermediate waypoints stick directly to the straight line between Departure and Destination"
-                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
                     routeTrackMode === 'straight'
-                      ? 'bg-sky-700 text-white'
+                      ? 'bg-sky-600 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -467,9 +467,9 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                   aria-pressed={routeTrackMode === 'freeform'}
                   onClick={() => onChangeRouteTrackMode('freeform')}
                   title="Freeform routing allows waypoints off the direct DEP-DEST line"
-                  className={`flex-1 sm:flex-initial px-2 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
                     routeTrackMode === 'freeform'
-                      ? 'bg-amber-600 text-white'
+                      ? 'bg-amber-600 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -485,13 +485,13 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           {viewMode === 'route' && (
             <>
               {/* Click Mode Selector: Route Waypoints vs Alternate */}
-              <div className="flex flex-wrap items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 w-full sm:w-auto">
+              <div className="aerolog-segmented flex flex-wrap items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 w-full sm:w-auto gap-0.5">
                 <button
                   type="button"
                   onClick={() => setClickMode('waypoint')}
-                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
                     clickMode === 'waypoint'
-                      ? 'bg-amber-600 text-white'
+                      ? 'bg-amber-600 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -501,9 +501,9 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                 <button
                   type="button"
                   onClick={() => setClickMode('alternate')}
-                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all flex items-center justify-center gap-1 whitespace-nowrap ${
                     clickMode === 'alternate'
-                      ? 'bg-purple-700 text-white'
+                      ? 'bg-purple-600 text-white shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -515,7 +515,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
               <button
                 type="button"
                 onClick={() => setFitTrigger((v) => v + 1)}
-                className="px-2.5 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
+                className="px-3 py-1.5 text-xs font-semibold bg-slate-100/90 hover:bg-slate-200/80 border border-slate-200/80 text-slate-700 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0"
               >
                 <Maximize2 className="w-3.5 h-3.5 shrink-0" />
                 Fit Route
@@ -529,7 +529,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
               aria-label="Upper-Air Forecast Model"
               value={windModel}
               onChange={(e) => onWindModelChange(e.target.value as WindModelId)}
-              className="px-2 py-1 text-xs font-mono font-semibold bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-md focus:outline-none focus:border-emerald-600 max-w-full sm:max-w-[210px] truncate"
+              className="px-2.5 py-1.5 text-xs font-mono font-semibold bg-emerald-50/90 border border-emerald-200/90 text-emerald-950 rounded-xl focus:outline-none focus:border-emerald-500 max-w-full sm:max-w-[210px] truncate transition-all"
               title="Select Free Upper-Air Forecast Model (Open-Meteo ECMWF IFS / GFS / ICON)"
             >
               {WIND_MODEL_OPTIONS.map((m) => (
@@ -545,10 +545,10 @@ export const RouteMap: React.FC<RouteMapProps> = ({
             type="button"
             onClick={onSyncAllWinds}
             disabled={isSyncingWinds || (waypoints.length === 0 && !alternate)}
-            className={`px-2.5 py-1 text-xs font-semibold border rounded-md flex items-center gap-1.5 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0 ${
+            className={`px-3 py-1.5 text-xs font-semibold border rounded-xl flex items-center gap-1.5 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 shadow-2xs ${
               windSyncSuccess
                 ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-400'
-                : 'bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-200'
+                : 'bg-sky-50/90 hover:bg-sky-100 text-sky-900 border-sky-200/90'
             }`}
           >
             <RefreshCw
@@ -570,7 +570,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
         {viewMode === 'route' ? (
           <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
             {/* Floating Search Box on top-left of Google Map */}
-            <div className="absolute top-2.5 left-2.5 right-2.5 sm:right-auto z-10 bg-white/95 backdrop-blur-xs p-1.5 rounded-md shadow-md border border-slate-200 flex items-center gap-2 max-w-full sm:max-w-xs">
+            <div className="absolute top-3 left-3 right-3 sm:right-auto z-10 bg-white/95 backdrop-blur-md p-1.5 rounded-xl shadow-lg border border-slate-200/90 flex items-center gap-2 max-w-full sm:max-w-xs">
               <PlacesSearchBox
                 clickMode={clickMode}
                 waypointsCount={waypoints.length}

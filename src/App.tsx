@@ -15,6 +15,8 @@ import {
   Hash,
   Moon,
   Sun,
+  Sparkles,
+  X,
 } from 'lucide-react';
 import {
   ALTITUDE_LEVELS,
@@ -66,6 +68,19 @@ export default function App() {
   const [isSyncingWinds, setIsSyncingWinds] = useState<boolean>(false);
   const [windSyncSuccess, setWindSyncSuccess] = useState<boolean>(false);
   const [windSyncCount, setWindSyncCount] = useState<number>(0);
+  const [showChangelog, setShowChangelog] = useState<boolean>(true);
+  const todayIstDate = useMemo(() => {
+    const iso = getCurrentIstDateTime().date;
+    const [y, m, d] = iso.split('-').map(Number);
+    const dateObj = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+    const readable = dateObj.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    return { iso, readable };
+  }, []);
   const syncSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
     'Upper-air winds synced via Open-Meteo ECMWF IFS for 5,000 ft (850 hPa)'
@@ -693,25 +708,31 @@ export default function App() {
   }, []);
 
   return (
-    <div id="top" className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden">
-      {/* Top Navigation Bar (Strict 3-Zone Contract + Mobile Section Jump Strip) */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3 no-print shadow-2xs">
+    <div
+      id="top"
+      className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900 overflow-x-hidden selection:bg-sky-500/20 selection:text-sky-900"
+    >
+      {/* Top Navigation Bar (Glassmorphic Sticky Header + Mobile Section Jump Strip) */}
+      <header className="sticky top-0 z-30 bg-white/88 backdrop-blur-xl border-b border-slate-200/80 px-3 sm:px-6 py-2.5 sm:py-3 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
         <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-8">
           {/* Zone 1: Brand wordmark + vibecoded credit */}
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 min-w-0">
             <a
               href="#top"
-              className="text-base sm:text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 text-base sm:text-lg font-display font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 group"
             >
-              AeroLog VFR
+              <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                <Compass className="w-4 h-4" />
+              </span>
+              <span>AeroLog VFR</span>
             </a>
-            <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 whitespace-nowrap">
+            <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 bg-slate-100/80 border border-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap">
               vibe coded with <span className="text-rose-500">♥</span> by{' '}
               <a
                 href="https://www.instagram.com/amartya320/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sky-700 hover:text-sky-900 font-semibold underline decoration-sky-300 underline-offset-2"
+                className="text-sky-600 hover:text-sky-800 font-semibold underline decoration-sky-300 underline-offset-2 transition-colors"
               >
                 @amartya320
               </a>
@@ -721,36 +742,53 @@ export default function App() {
           {/* Zone 2: 4 concise single-line navigation links */}
           <nav
             aria-label="Primary Section Navigation"
-            className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600"
+            className="hidden md:flex items-center gap-1 bg-slate-100/80 border border-slate-200/70 p-1 rounded-xl text-xs font-semibold text-slate-600 aerolog-segmented"
           >
             <a
               href="#flight-parameters"
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
             >
               Flight Parameters
             </a>
             <a
               href="#map-waypoints"
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
             >
               Map & Waypoints
             </a>
             <a
               href="#alternate-planner"
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
             >
               Alternate & Fuel Plan
             </a>
             <a
               href="#navlog-sheet"
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
             >
               NavLog Sheet
             </a>
           </nav>
 
-          {/* Zone 3: Dark Mode Toggle */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Zone 3: Changelog & Dark Mode Toggle */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              id="changelog-toggle-btn"
+              type="button"
+              onClick={() => setShowChangelog((prev) => !prev)}
+              aria-expanded={showChangelog}
+              title="View latest AeroLog VFR changelog & release notes"
+              className={`px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
+                showChangelog
+                  ? 'bg-sky-50/90 border-sky-300 text-sky-800 hover:bg-sky-100'
+                  : 'bg-white border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+              <span>What&apos;s New</span>
+              <span className="hidden sm:inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            </button>
+
             <button
               id="dark-mode-toggle"
               type="button"
@@ -762,10 +800,10 @@ export default function App() {
                   ? 'Switch to Daylight Kneeboard (Light Mode)'
                   : 'Switch to Cockpit Night View (Dark Mode)'
               }
-              className={`px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              className={`px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
                 darkMode
-                  ? 'bg-amber-500/20 border-amber-400/50 text-amber-300 hover:bg-amber-500/30'
-                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                  ? 'bg-amber-500/15 border-amber-400/40 text-amber-300 hover:bg-amber-500/25'
+                  : 'bg-white border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
               }`}
             >
               {darkMode ? (
@@ -775,7 +813,7 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <Moon className="w-3.5 h-3.5 text-slate-700 shrink-0" />
+                  <Moon className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                   <span>Dark Mode</span>
                 </>
               )}
@@ -790,31 +828,31 @@ export default function App() {
         >
           <a
             href="#flight-parameters"
-            className="px-1 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-center truncate"
+            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
           >
             1. Params
           </a>
           <a
             href="#map-waypoints"
-            className="px-1 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-center truncate"
+            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
           >
             2. Map/Wx
           </a>
           <a
             href="#wind-triangle"
-            className="px-1 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-center truncate"
+            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
           >
             3. Waypoints
           </a>
           <a
             href="#alternate-planner"
-            className="px-1 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-center truncate"
+            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
           >
             4. Alt/Fuel
           </a>
           <a
             href="#navlog-sheet"
-            className="px-1 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-center truncate"
+            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
           >
             5. NavLog
           </a>
@@ -822,24 +860,93 @@ export default function App() {
       </header>
 
       {/* Main Workspace Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-3.5 sm:py-5 space-y-4 sm:space-y-5">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-6 space-y-5 sm:space-y-6">
+        {/* Changelog Notification Banner */}
+        {showChangelog && (
+          <aside
+            id="changelog-notification"
+            role="status"
+            aria-label="Latest Changelog Notification"
+            className="aerolog-card bg-white border border-sky-200/90 rounded-2xl p-3.5 sm:p-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_25px_-5px_rgba(14,165,233,0.08)]"
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-sky-50/90 text-sky-800 border border-sky-200/80">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                  Changelog Update
+                </span>
+                <span
+                  id="changelog-date-badge"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-slate-100/90 text-slate-700 border border-slate-200/80"
+                >
+                  <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                  {todayIstDate.readable} ({todayIstDate.iso})
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 flex-1 lg:mx-2">
+                <div className="aerolog-subcard bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                  <div className="text-xs leading-snug">
+                    <strong className="font-semibold text-slate-900">Updated Modern UI:</strong>{' '}
+                    <span className="text-slate-600">
+                      Refined EFB command deck, streamlined controls &amp; true AMOLED black dark mode.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="aerolog-subcard bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                  <div className="text-xs leading-snug">
+                    <strong className="font-semibold text-slate-900">Rounded Off Wind Direction:</strong>{' '}
+                    <span className="text-slate-600">
+                      Wind direction degrees automatically rounded to the nearest 10° increment.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="aerolog-subcard bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                  <div className="text-xs leading-snug">
+                    <strong className="font-semibold text-slate-900">More Accurate Wind Data:</strong>{' '}
+                    <span className="text-slate-600">
+                      Live Open-Meteo ECMWF IFS / GFS / ICON upper-air winds synced to IST flight time.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                id="dismiss-changelog-btn"
+                type="button"
+                onClick={() => setShowChangelog(false)}
+                aria-label="Dismiss changelog notification"
+                title="Dismiss changelog notification"
+                className="self-end lg:self-center p-1.5 rounded-xl bg-slate-100/80 hover:bg-slate-200/80 text-slate-500 hover:text-slate-800 border border-slate-200/80 transition-colors shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </aside>
+        )}
+
         {/* Section 1: Departure Date/Time, Aircraft Performance & Fuel Reserves Ribbon */}
         <section
           id="flight-parameters"
-          className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 space-y-3.5 sm:space-y-4 no-print"
+          className="aerolog-card bg-white border border-slate-200/85 rounded-2xl p-4 sm:p-5 space-y-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_30px_-5px_rgba(15,23,42,0.04)]"
         >
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 border-b border-slate-100 pb-3.5">
             <div>
-              <h1 className="text-sm sm:text-base font-bold text-slate-900">
+              <h1 className="text-base sm:text-lg font-display font-bold text-slate-900 tracking-tight">
                 Flight Navigation Log & Upper-Air Wind Calculator
               </h1>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Set Estimated Departure Date & Time (IST), Cruise Altitude, and Free Upper-Air Weather Model (ECMWF IFS, NOAA GFS, or DWD ICON) to compute leg winds, headings, ground speeds, and fuel.
               </p>
             </div>
 
             {/* Preset Route Selector, Round Off Values Toggle & Clear Flight Plan Button */}
-            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+            <div className="flex flex-wrap items-center lg:justify-end gap-2 w-full lg:w-auto shrink-0">
               <button
                 id="toggle-round-off-btn"
                 type="button"
@@ -847,10 +954,10 @@ export default function App() {
                   updateConfig({ roundOffValues: !config.roundOffValues })
                 }
                 title="Toggle rounding off decimal values to whole integers across all distance, time, and fuel calculations"
-                className={`px-2.5 sm:px-3 py-1.5 text-xs font-semibold border rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 text-xs font-semibold border rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
                   config.roundOffValues
-                    ? 'bg-amber-100 border-amber-500 text-amber-950'
-                    : 'bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100'
+                    ? 'bg-amber-100/90 border-amber-400 text-amber-950'
+                    : 'bg-slate-50/90 border-slate-200/90 text-slate-700 hover:bg-slate-100'
                 }`}
               >
                 <Hash className="w-3.5 h-3.5" />
@@ -863,16 +970,16 @@ export default function App() {
                 id="clear-flight-plan-btn"
                 type="button"
                 onClick={handleClearFlightPlan}
-                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 sm:order-3"
+                className="px-3 py-1.5 text-xs font-semibold bg-rose-50/90 hover:bg-rose-100 text-rose-700 border border-rose-200/90 rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 sm:order-3 shadow-2xs"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Clear Flight Plan
               </button>
 
-              <div className="flex items-center gap-1.5 w-full sm:w-auto sm:flex-1 lg:flex-initial min-w-0 sm:order-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 lg:flex-initial min-w-0 sm:order-2 bg-slate-50/90 border border-slate-200/90 rounded-xl px-2.5 py-1 aerolog-subcard">
                 <label
                   htmlFor="preset-route-select"
-                  className="text-xs font-semibold text-slate-700 whitespace-nowrap shrink-0"
+                  className="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0"
                 >
                   Sample Flight Plan:
                 </label>
@@ -880,7 +987,7 @@ export default function App() {
                   id="preset-route-select"
                   value={activePresetId}
                   onChange={(e) => handleLoadPreset(e.target.value)}
-                  className="flex-1 sm:w-auto sm:max-w-[260px] lg:max-w-xs min-w-0 truncate text-xs font-medium bg-slate-50 border border-slate-300 rounded-md px-2.5 py-1.5 text-slate-900 focus:outline-none focus:border-sky-600"
+                  className="flex-1 sm:w-auto sm:max-w-[200px] min-w-0 truncate text-xs font-semibold bg-transparent border-0 py-0.5 text-slate-900 focus:outline-none"
                 >
                   {PRESET_ROUTES.map((route) => (
                     <option key={route.id} value={route.id}>
@@ -894,14 +1001,14 @@ export default function App() {
           </div>
 
           {/* Primary Flight Parameters Grid: Est Departure Date, Est Departure Time, Altitude, Wind Model, TAS, Fuel Flow, Initial Fuel, Taxi, Fixed Track */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-2.5 sm:gap-3 items-end">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-3 items-end">
             {/* 1. Estimated Departure Date (IST) */}
             <div className="col-span-1 sm:col-span-1 md:col-span-2 lg:col-span-2">
               <label
                 htmlFor="input-departure-date"
-                className="block text-[11px] font-semibold text-sky-900 mb-1 flex items-center gap-1 truncate"
+                className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 truncate"
               >
-                <Calendar className="w-3 h-3 text-sky-700 shrink-0" />
+                <Calendar className="w-3 h-3 text-sky-600 shrink-0" />
                 <span className="truncate">Est. Departure Date (IST)</span>
               </label>
               <input
@@ -909,7 +1016,7 @@ export default function App() {
                 type="date"
                 value={config.departureDate}
                 onChange={(e) => handleDepartureDateChange(e.target.value)}
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-sky-50/60 border border-sky-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-sky-50/60 border border-sky-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -917,17 +1024,17 @@ export default function App() {
             <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
               <label
                 htmlFor="input-airborne-time"
-                className="block text-[11px] font-semibold text-sky-900 mb-1 flex items-center gap-1 truncate"
+                className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 whitespace-nowrap"
               >
-                <Clock className="w-3 h-3 text-sky-700 shrink-0" />
-                <span className="truncate">Est. Dep Time (IST)</span>
+                <Clock className="w-3 h-3 text-sky-600 shrink-0" />
+                <span>Dep Time (IST)</span>
               </label>
               <input
                 id="input-airborne-time"
                 type="time"
                 value={config.airborneTime}
                 onChange={(e) => handleDepartureTimeChange(e.target.value)}
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-sky-50/60 border border-sky-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2 py-2 text-xs font-mono font-bold bg-sky-50/60 border border-sky-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -935,7 +1042,7 @@ export default function App() {
             <div className="col-span-2 sm:col-span-1 md:col-span-3 lg:col-span-2">
               <label
                 htmlFor="select-altitude-ft"
-                className="block text-[11px] font-semibold text-slate-600 mb-1 truncate"
+                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
               >
                 Cruise Altitude (Pressure Level)
               </label>
@@ -943,7 +1050,7 @@ export default function App() {
                 id="select-altitude-ft"
                 value={config.selectedAltitudeFt}
                 onChange={(e) => handleAltitudeChange(Number(e.target.value))}
-                className="w-full px-2 py-1.5 text-xs font-mono font-semibold bg-slate-50 border border-slate-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-semibold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               >
                 {ALTITUDE_LEVELS.map((lvl) => (
                   <option key={lvl.altitudeFt} value={lvl.altitudeFt}>
@@ -957,7 +1064,7 @@ export default function App() {
             <div className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2">
               <label
                 htmlFor="select-wind-model"
-                className="block text-[11px] font-semibold text-emerald-900 mb-1 truncate"
+                className="block text-[11px] font-semibold text-emerald-900 mb-1.5 truncate"
                 title="Open-Meteo provides 100% free, unshuffled upper-air pressure-level wind forecasts from ECMWF IFS (Windy's default model), NOAA GFS, and DWD ICON"
               >
                 Upper-Air Wind Model (Free)
@@ -966,7 +1073,7 @@ export default function App() {
                 id="select-wind-model"
                 value={config.windModel || 'ecmwf_ifs025'}
                 onChange={(e) => handleWindModelChange(e.target.value as WindModelId)}
-                className="w-full px-2 py-1.5 text-xs font-mono font-semibold bg-emerald-50/70 border border-emerald-300 rounded text-slate-900 focus:bg-white focus:border-emerald-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-semibold bg-emerald-50/70 border border-emerald-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 focus:outline-none transition-all"
               >
                 {WIND_MODEL_OPTIONS.map((mdl) => (
                   <option key={mdl.id} value={mdl.id}>
@@ -980,7 +1087,7 @@ export default function App() {
             <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
               <label
                 htmlFor="input-tas-kt"
-                className="block text-[11px] font-semibold text-slate-600 mb-1 truncate"
+                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
               >
                 Cruise TAS (kt)
               </label>
@@ -991,7 +1098,7 @@ export default function App() {
                 fallbackOnEmptyBlur={85}
                 value={config.cruiseTasKt}
                 onChange={(val) => updateConfig({ cruiseTasKt: Math.max(1, val) })}
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -999,7 +1106,7 @@ export default function App() {
             <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
               <label
                 htmlFor="input-fuel-flow"
-                className="block text-[11px] font-semibold text-slate-600 mb-1 truncate"
+                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
               >
                 Fuel Flow (L/hr)
               </label>
@@ -1010,7 +1117,7 @@ export default function App() {
                 fallbackOnEmptyBlur={15}
                 value={config.fuelFlowLph}
                 onChange={(val) => updateConfig({ fuelFlowLph: Math.max(0, val) })}
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -1018,7 +1125,7 @@ export default function App() {
             <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
               <label
                 htmlFor="input-initial-fuel"
-                className="block text-[11px] font-semibold text-slate-600 mb-1 truncate"
+                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
               >
                 Block Fuel (L)
               </label>
@@ -1031,7 +1138,7 @@ export default function App() {
                 onChange={(val) =>
                   updateConfig({ initialFuelLiters: Math.max(0, val) })
                 }
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -1039,7 +1146,7 @@ export default function App() {
             <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
               <label
                 htmlFor="input-taxi-fuel"
-                className="block text-[11px] font-semibold text-slate-600 mb-1 truncate"
+                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
               >
                 Taxi Fuel (L)
               </label>
@@ -1050,7 +1157,7 @@ export default function App() {
                 fallbackOnEmptyBlur={5}
                 value={config.taxiFuelLiters}
                 onChange={(val) => updateConfig({ taxiFuelLiters: Math.max(0, val) })}
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded text-slate-900 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -1058,7 +1165,7 @@ export default function App() {
             <div className="col-span-2 sm:col-span-2 md:col-span-6 lg:col-span-1">
               <label
                 htmlFor="input-global-track"
-                className="block text-[11px] font-semibold text-slate-600 mb-1 truncate"
+                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
                 title="Leave blank to auto-calculate track between each map waypoint, or enter a fixed track (0-359°) for the whole flight"
               >
                 Fixed Track (°T)
@@ -1081,41 +1188,38 @@ export default function App() {
                       val === '' ? null : Math.max(0, Math.min(359, Number(val))),
                   });
                 }}
-                className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-slate-50 border border-slate-300 rounded text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:bg-white focus:border-sky-600 focus:outline-none"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
           </div>
 
-          {/* Flight Summary KPI Strip */}
-          <div className="pt-2.5 border-t border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 text-xs">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-slate-700 font-mono">
-              <span className="flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-                Total Dist:{' '}
-                <strong>
+          {/* Flight Summary KPI Telemetry Ribbon */}
+          <div className="aerolog-subcard bg-slate-50/90 border border-slate-200/80 rounded-xl px-3.5 py-2.5 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 text-xs">
+            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-slate-700 font-mono">
+              <span className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span className="text-slate-500 font-sans font-medium">Total Dist:</span>
+                <strong className="text-slate-900">
                   {formatCalc(navLogSummary.totalDistanceNm, config.roundOffValues)} NM
                 </strong>
               </span>
-              <span aria-hidden="true" className="hidden sm:inline text-slate-300">·</span>
-              <span className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-                Trip Time:{' '}
-                <strong>
+              <span className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span className="text-slate-500 font-sans font-medium">Trip Time:</span>
+                <strong className="text-slate-900">
                   {formatCalc(navLogSummary.totalTimeMin, config.roundOffValues)} min (ETA{' '}
                   {navLogSummary.finalEta})
                 </strong>
               </span>
-              <span aria-hidden="true" className="hidden sm:inline text-slate-300">·</span>
-              <span className="flex items-center gap-1.5">
-                <Compass className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-                Avg G/S:{' '}
-                <strong>
+              <span className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                <Compass className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span className="text-slate-500 font-sans font-medium">Avg G/S:</span>
+                <strong className="text-slate-900">
                   {formatCalc(navLogSummary.averageGsKt, config.roundOffValues)} kt
                 </strong>
               </span>
-              <span aria-hidden="true" className="hidden lg:inline text-slate-300">·</span>
-              <span className="w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-slate-100 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs">
-                <Fuel className="w-3.5 h-3.5 text-sky-700 shrink-0" />
+              <span className="w-full lg:w-auto pt-1.5 lg:pt-0 border-t lg:border-t-0 border-slate-200/70 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs bg-white lg:px-2.5 lg:py-1 lg:rounded-lg lg:border lg:border-slate-200/80 lg:shadow-2xs">
+                <Fuel className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <span>
                   Trip:{' '}
                   <strong>
@@ -1167,7 +1271,7 @@ export default function App() {
                   </strong>
                 </span>
                 <span>= Req Block:</span>
-                <strong className="text-slate-950">
+                <strong className="text-sky-700">
                   {formatCalc(
                     navLogSummary.fuelPlan.totalBlockFuelRequiredLiters,
                     config.roundOffValues
@@ -1177,12 +1281,14 @@ export default function App() {
               </span>
             </div>
 
-            <div className="text-[11px] text-slate-500 font-mono truncate">{windSyncStatus}</div>
+            <div className="text-[11px] text-slate-500 font-mono truncate px-2 py-0.5 bg-white/80 rounded-md border border-slate-200/60">
+              {windSyncStatus}
+            </div>
           </div>
         </section>
 
-        {/* Section 2: Interactive Google Maps / Earth + Waypoint Manager & E6B Wind Triangle */}
-        <section id="map-waypoints" className="space-y-4 no-print">
+        {/* Section 2: Interactive Google Maps / Earth + Waypoint Manager */}
+        <section id="map-waypoints" className="space-y-5 no-print">
           <RouteMap
             waypoints={waypoints}
             legs={navLogSummary.legs}
@@ -1278,13 +1384,13 @@ export default function App() {
         </section>
 
         {/* Section 4: Paper-Faithful Flight NavLog Table (Estimated Pre-Flight Columns) */}
-        <section id="navlog-sheet" className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3 no-print">
+        <section id="navlog-sheet" className="space-y-3.5">
+          <div className="aerolog-card bg-white border border-slate-200/85 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3.5 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_30px_-5px_rgba(15,23,42,0.04)]">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">
+              <h2 className="text-base font-display font-bold text-slate-900">
                 Flight Navigation Log Sheet (Pre-Flight Estimated Values)
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Ready to copy onto your physical flight logbook. Click any Track, Leg Distance, or Wind cell to override values.
               </p>
             </div>
@@ -1296,10 +1402,10 @@ export default function App() {
                 onClick={() =>
                   updateConfig({ roundOffValues: !config.roundOffValues })
                 }
-                className={`px-2.5 py-1.5 text-xs font-semibold border rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 text-xs font-semibold border rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
                   config.roundOffValues
-                    ? 'bg-amber-100 border-amber-500 text-amber-950'
-                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
+                    ? 'bg-amber-100/90 border-amber-400 text-amber-950'
+                    : 'bg-slate-50/90 border-slate-200/90 text-slate-700 hover:bg-slate-100'
                 }`}
               >
                 <Hash className="w-3.5 h-3.5" />
@@ -1307,11 +1413,11 @@ export default function App() {
               </button>
 
               {/* True vs Magnetic Heading Switch */}
-              <div className="flex items-center gap-1 p-0.5 bg-slate-200 rounded-md">
+              <div className="flex items-center gap-1 p-1 bg-slate-100/90 border border-slate-200/80 rounded-xl aerolog-segmented">
                 <button
                   type="button"
                   onClick={() => setShowMagneticHeading(false)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors whitespace-nowrap shrink-0 ${
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap shrink-0 ${
                     !showMagneticHeading
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -1322,7 +1428,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowMagneticHeading(true)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors whitespace-nowrap shrink-0 ${
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all whitespace-nowrap shrink-0 ${
                     showMagneticHeading
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -1338,7 +1444,7 @@ export default function App() {
                 onClick={() =>
                   setPaperBlankRowsCount((c) => (c === 3 ? 10 : c === 10 ? 0 : 3))
                 }
-                className="px-2.5 py-1.5 text-xs font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="px-3 py-1.5 text-xs font-semibold bg-slate-50/90 border border-slate-200/90 text-slate-700 hover:bg-slate-100 rounded-xl transition-all whitespace-nowrap shrink-0 shadow-2xs"
               >
                 Blank Rows: {paperBlankRowsCount}
               </button>
@@ -1347,7 +1453,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="px-3 py-1.5 text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                className="px-3.5 py-1.5 text-xs font-semibold bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-xs"
               >
                 <Printer className="w-3.5 h-3.5" />
                 Print Sheet
@@ -1371,9 +1477,9 @@ export default function App() {
       </main>
 
       {/* Quiet Footer */}
-      <footer className="border-t border-slate-200 bg-white px-4 sm:px-6 py-3 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2 no-print">
+      <footer className="border-t border-slate-200/80 bg-white px-4 sm:px-6 py-4 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2 no-print">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>
+          <span className="font-display font-semibold text-slate-700">
             AeroLog VFR Navigation Log Calculator · E6B Wind Triangle & Fuel Planner
           </span>
           <span className="text-slate-300">•</span>
@@ -1383,16 +1489,17 @@ export default function App() {
               href="https://www.instagram.com/amartya320/"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sky-700 hover:text-sky-900 font-semibold underline decoration-sky-300 underline-offset-2"
+              className="text-sky-600 hover:text-sky-800 font-semibold underline decoration-sky-300 underline-offset-2"
             >
               @amartya320
             </a>
           </span>
         </div>
-        <span>
+        <span className="font-mono text-[11px] text-slate-400">
           Upper-Air Wind & Weather Map: Open-Meteo Free Pressure-Level API · IMD INSAT-3DR/3DS
         </span>
       </footer>
     </div>
   );
 }
+

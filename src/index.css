@@ -1,239 +1,313 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @layer base {
+  :root {
+    --font-display: 'Outfit', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #f8fafc;
+    font-family: var(--font-sans);
+    background-color: #f4f7fb;
     color: #0f172a;
     margin: 0;
     padding: 0;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.2s ease, color 0.2s ease;
   }
 
-  code, pre, .font-mono {
-    font-family: 'JetBrains Mono', monospace;
-    font-variant-numeric: tabular-nums;
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
   }
 }
 
-/* ============================================================================
-   Cockpit Night / True AMOLED Black Dark Mode Theme (Screen Only — Print Remains Crisp White)
-   ============================================================================ */
-@media screen {
-  html.dark {
-    color-scheme: dark;
-  }
-
-  html.dark body,
-  html.dark #top {
-    background-color: #000000 !important;
-    color: #f8fafc !important;
-  }
-
-  /* Primary Surfaces & Cards — Pure AMOLED Black (#000000) */
-  html.dark .bg-white {
-    background-color: #000000 !important;
-  }
-
-  html.dark .bg-white\/95 {
-    background-color: rgba(0, 0, 0, 0.96) !important;
-  }
-
-  html.dark .bg-slate-950,
-  html.dark .bg-slate-900 {
-    background-color: #000000 !important;
-  }
-
-  html.dark .bg-slate-900\/90,
-  html.dark .bg-slate-900\/92 {
-    background-color: rgba(0, 0, 0, 0.94) !important;
-  }
-
-  /* Secondary / Input / Subtle Surfaces — Ultra-Deep AMOLED Carbon (#060606 - #121212) */
-  html.dark .bg-slate-50 {
-    background-color: #060606 !important;
-  }
-
-  html.dark .bg-slate-50\/50,
-  html.dark .bg-slate-50\/70 {
-    background-color: #050505 !important;
-  }
-
-  html.dark .bg-slate-100,
-  html.dark .bg-slate-800,
-  html.dark .bg-slate-800\/90 {
-    background-color: #0c0c0c !important;
-  }
-
-  html.dark .bg-slate-200,
-  html.dark .bg-slate-200\/80 {
-    background-color: #141414 !important;
-  }
-
-  /* Accented Input & Status Surfaces in AMOLED Dark Mode */
-  html.dark .bg-sky-50,
-  html.dark .bg-sky-50\/60,
-  html.dark .bg-sky-50\/90,
-  html.dark .bg-sky-50\/40 {
-    background-color: rgba(14, 116, 144, 0.16) !important;
-  }
-
-  html.dark .bg-emerald-50,
-  html.dark .bg-emerald-50\/70,
-  html.dark .bg-emerald-50\/60,
-  html.dark .bg-emerald-50\/40 {
-    background-color: rgba(6, 95, 70, 0.18) !important;
-  }
-
-  html.dark .bg-indigo-50,
-  html.dark .bg-indigo-50\/50,
-  html.dark .bg-indigo-50\/80 {
-    background-color: rgba(67, 56, 202, 0.18) !important;
-  }
-
-  html.dark .bg-purple-50 {
-    background-color: rgba(126, 34, 206, 0.18) !important;
-  }
-
-  html.dark .bg-rose-50 {
-    background-color: rgba(190, 18, 60, 0.18) !important;
-  }
-
-  html.dark .bg-amber-50,
-  html.dark .bg-amber-100 {
-    background-color: rgba(180, 83, 9, 0.22) !important;
-  }
-
-  /* Borders & Dividers — Crisp Subtle Lines on Pure Black */
-  html.dark .border-slate-100,
-  html.dark .border-slate-200 {
-    border-color: #1a1a1a !important;
-  }
-
-  html.dark .border-slate-300,
-  html.dark .border-slate-400,
-  html.dark .border-slate-700,
-  html.dark .border-slate-800 {
-    border-color: #262626 !important;
-  }
-
-  html.dark .divide-slate-400 > :not([hidden]) ~ :not([hidden]),
-  html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
-  html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
-    border-color: #1f1f1f !important;
-  }
-
-  html.dark .border-sky-200,
-  html.dark .border-sky-300 {
-    border-color: rgba(56, 189, 248, 0.35) !important;
-  }
-
-  html.dark .border-emerald-200,
-  html.dark .border-emerald-300 {
-    border-color: rgba(52, 211, 153, 0.35) !important;
-  }
-
-  html.dark .border-indigo-200,
-  html.dark .border-indigo-300 {
-    border-color: rgba(129, 140, 248, 0.4) !important;
-  }
-
-  html.dark .border-purple-200,
-  html.dark .border-purple-300 {
-    border-color: rgba(192, 132, 252, 0.4) !important;
-  }
-
-  html.dark .border-rose-200,
-  html.dark .border-rose-300 {
-    border-color: rgba(251, 113, 133, 0.35) !important;
-  }
-
-  /* Typography Hierarchy */
-  html.dark .text-slate-950,
-  html.dark .text-slate-900,
-  html.dark .text-slate-800 {
-    color: #f8fafc !important;
-  }
-
-  html.dark .text-slate-700 {
-    color: #d4d4d8 !important;
-  }
-
-  html.dark .text-slate-600 {
-    color: #a1a1aa !important;
-  }
-
-  html.dark .text-slate-500 {
-    color: #8e8e93 !important;
-  }
-
-  html.dark .text-sky-950,
-  html.dark .text-sky-900,
-  html.dark .text-sky-800,
-  html.dark .text-sky-700 {
-    color: #38bdf8 !important;
-  }
-
-  html.dark .text-emerald-950,
-  html.dark .text-emerald-900,
-  html.dark .text-emerald-800,
-  html.dark .text-emerald-700 {
-    color: #34d399 !important;
-  }
-
-  html.dark .text-indigo-950,
-  html.dark .text-indigo-900,
-  html.dark .text-indigo-800,
-  html.dark .text-indigo-700 {
-    color: #a5b4fc !important;
-  }
-
-  html.dark .text-purple-900,
-  html.dark .text-purple-800,
-  html.dark .text-purple-700 {
-    color: #d8b4fe !important;
-  }
-
-  html.dark .text-rose-900,
-  html.dark .text-rose-800,
-  html.dark .text-rose-700 {
-    color: #fda4af !important;
-  }
-
-  html.dark .text-amber-950,
-  html.dark .text-amber-900,
-  html.dark .text-amber-800,
-  html.dark .text-amber-700 {
-    color: #fcd34d !important;
-  }
-
-  /* Form Controls (Selects & Inputs) in AMOLED Dark Mode */
-  html.dark select option {
-    background-color: #000000;
-    color: #f8fafc;
-  }
-
-  html.dark input:focus,
-  html.dark select:focus {
-    background-color: #0a0a0a !important;
-  }
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Modern subtle custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
+
+/* ==========================================================================
+   COCKPIT NIGHT VIEW (DARK MODE) — True AMOLED Black (#000000)
+   ========================================================================== */
+html.dark,
+html.dark body,
+html.dark #top {
+  background-color: #000000 !important;
+  color: #f5f5f5 !important;
+}
+
+html.dark header {
+  background-color: rgba(0, 0, 0, 0.95) !important;
+  border-color: #262626 !important;
+}
+
+html.dark footer {
+  background-color: #000000 !important;
+  border-color: #262626 !important;
+}
+
+/* Primary & Elevated surfaces in True AMOLED Dark Mode */
+html.dark .aerolog-card {
+  background-color: #000000 !important;
+  border-color: #262626 !important;
+  box-shadow: none !important;
+}
+
+html.dark .aerolog-subcard {
+  background-color: #0a0a0a !important;
+  border-color: #262626 !important;
+}
+
+html.dark .aerolog-toolbar {
+  background-color: #000000 !important;
+  border-color: #262626 !important;
+}
+
+html.dark .aerolog-segmented {
+  background-color: #0a0a0a !important;
+  border-color: #262626 !important;
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/80,
+html.dark .bg-white\/88,
+html.dark .bg-white\/90,
+html.dark .bg-white\/95 {
+  background-color: #000000 !important;
+  color: #f5f5f5 !important;
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/60,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/80,
+html.dark .bg-slate-50\/90 {
+  background-color: #0a0a0a !important;
+  color: #e5e5e5 !important;
+  border-color: #262626 !important;
+}
+
+html.dark .bg-slate-100,
+html.dark .bg-slate-100\/60,
+html.dark .bg-slate-100\/80,
+html.dark .bg-slate-100\/90,
+html.dark .bg-slate-100\/95,
+html.dark .bg-slate-200,
+html.dark .bg-slate-200\/70,
+html.dark .bg-slate-200\/80 {
+  background-color: #121212 !important;
+  color: #f5f5f5 !important;
+  border-color: #2e2e2e !important;
+}
+
+html.dark .bg-slate-900,
+html.dark .from-slate-900 {
+  background-color: #000000 !important;
+  background-image: none !important;
+  border-color: #262626 !important;
+}
+
+html.dark .bg-slate-800\/80,
+html.dark .bg-slate-800\/90 {
+  background-color: #0a0a0a !important;
+  border-color: #262626 !important;
+}
+
+/* Tinted semantic surfaces in True AMOLED Dark Mode */
+html.dark .bg-sky-50,
+html.dark .bg-sky-50\/60,
+html.dark .bg-sky-50\/70,
+html.dark .bg-sky-50\/90,
+html.dark .bg-sky-100,
+html.dark .bg-sky-100\/70,
+html.dark .bg-sky-100\/80 {
+  background-color: rgba(14, 165, 233, 0.14) !important;
+  color: #7dd3fc !important;
+  border-color: rgba(56, 189, 248, 0.35) !important;
+}
+
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/70,
+html.dark .bg-emerald-50\/80,
+html.dark .bg-emerald-50\/90,
+html.dark .bg-emerald-100,
+html.dark .bg-emerald-100\/80 {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+  color: #6ee7b7 !important;
+  border-color: rgba(52, 211, 153, 0.35) !important;
+}
+
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/70,
+html.dark .bg-amber-50\/90,
+html.dark .bg-amber-100,
+html.dark .bg-amber-100\/80,
+html.dark .bg-amber-100\/90 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+  color: #fcd34d !important;
+  border-color: rgba(251, 191, 36, 0.4) !important;
+}
+
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-50\/70,
+html.dark .bg-indigo-50\/80,
+html.dark .bg-indigo-50\/90,
+html.dark .bg-indigo-100,
+html.dark .bg-indigo-100\/80 {
+  background-color: rgba(99, 102, 241, 0.14) !important;
+  color: #a5b4fc !important;
+  border-color: rgba(129, 140, 248, 0.35) !important;
+}
+
+html.dark .bg-rose-50,
+html.dark .bg-rose-50\/90,
+html.dark .bg-rose-100 {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+  color: #fda4af !important;
+  border-color: rgba(251, 113, 133, 0.35) !important;
+}
+
+/* Text colors in True AMOLED Dark Mode */
+html.dark .text-slate-950,
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #fafafa !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600 {
+  color: #d4d4d8 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-slate-400 {
+  color: #a1a1aa !important;
+}
+
+html.dark .text-sky-950,
+html.dark .text-sky-900,
+html.dark .text-sky-800,
+html.dark .text-sky-700,
+html.dark .text-sky-600 {
+  color: #38bdf8 !important;
+}
+
+html.dark .text-emerald-950,
+html.dark .text-emerald-900,
+html.dark .text-emerald-800,
+html.dark .text-emerald-700 {
+  color: #34d399 !important;
+}
+
+html.dark .text-amber-950,
+html.dark .text-amber-900,
+html.dark .text-amber-800,
+html.dark .text-amber-700 {
+  color: #fbbf24 !important;
+}
+
+html.dark .text-indigo-950,
+html.dark .text-indigo-900,
+html.dark .text-indigo-800,
+html.dark .text-indigo-700,
+html.dark .text-indigo-600 {
+  color: #818cf8 !important;
+}
+
+html.dark .text-rose-800,
+html.dark .text-rose-700,
+html.dark .text-rose-600 {
+  color: #fb7185 !important;
+}
+
+/* Borders & Dividers in True AMOLED Dark Mode */
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-200\/60,
+html.dark .border-slate-200\/70,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-200\/85,
+html.dark .border-slate-200\/90,
+html.dark .border-slate-300,
+html.dark .border-slate-300\/90,
+html.dark .border-slate-400,
+html.dark .border-slate-700,
+html.dark .border-slate-800 {
+  border-color: #27272a !important;
+}
+
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-300 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-400 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #1f1f23 !important;
+}
+
+/* Inputs & Selects in True AMOLED Dark Mode */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: #000000 !important;
+  color: #fafafa !important;
+  border-color: #27272a !important;
+  color-scheme: dark;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
+}
+
+/* Print Kneeboard Sheet Rules */
 @media print {
+  @page {
+    size: landscape;
+    margin: 0.35in;
+  }
+
   body {
     background-color: #ffffff !important;
     color: #000000 !important;
+    font-size: 9pt;
   }
+
   .no-print {
     display: none !important;
   }
+
   .print-only {
     display: block !important;
   }
+
   .print-break-inside-avoid {
     break-inside: avoid;
   }
