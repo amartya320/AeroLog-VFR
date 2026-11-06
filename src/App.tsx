@@ -98,6 +98,14 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!showChangelog) return;
+    const timer = setTimeout(() => {
+      setShowChangelog(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [showChangelog]);
   const syncSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
     'Upper-air winds synced via Open-Meteo ECMWF IFS for 5,000 ft (850 hPa)'
