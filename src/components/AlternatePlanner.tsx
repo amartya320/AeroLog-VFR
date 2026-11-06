@@ -468,7 +468,7 @@ export const AlternatePlanner: React.FC<AlternatePlannerProps> = ({
 
       {/* Computed Alternate Diversion Summary Strip */}
       {!alternate && (
-        <div className="aerolog-subcard bg-slate-50/80 border border-dashed border-slate-300/90 rounded-xl px-4 py-3 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
+        <div className="aerolog-subcard animate-fade-up bg-slate-50/80 border border-dashed border-slate-300/90 rounded-xl px-4 py-3 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
           <span>
             <strong>No Alternate Selected:</strong> Search an airport above, click a quick ICAO button, enter coordinates, or use &ldquo;Click Map: Set Alternate&rdquo;.
           </span>
@@ -479,7 +479,10 @@ export const AlternatePlanner: React.FC<AlternatePlannerProps> = ({
       )}
 
       {computedAlternate && alternate && (
-        <div className="aerolog-subcard bg-slate-50/90 border border-slate-200/85 rounded-xl p-4 space-y-3.5">
+        <div
+          key={`alt-${alternate.name}-${computedAlternate.fromRole}`}
+          className="aerolog-subcard animate-scale-in bg-slate-50/90 border border-slate-200/85 rounded-xl p-4 space-y-3.5"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
             <div className="flex items-center gap-2 text-xs">
               <span

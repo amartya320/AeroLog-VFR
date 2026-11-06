@@ -16,6 +16,7 @@ import {
   Moon,
   Sun,
   Sparkles,
+  Flame,
   X,
 } from 'lucide-react';
 import {
@@ -45,6 +46,7 @@ import { NavLogTable } from './components/NavLogTable';
 import { WaypointManager } from './components/WaypointManager';
 import { AlternatePlanner } from './components/AlternatePlanner';
 import { EditableNumberInput } from './components/EditableNumberInput';
+import { DiwaliFirecrackers } from './components/DiwaliFirecrackers';
 
 export default function App() {
   const [activePresetId, setActivePresetId] = useState<string>(PRESET_ROUTES[0].id);
@@ -69,17 +71,32 @@ export default function App() {
   const [windSyncSuccess, setWindSyncSuccess] = useState<boolean>(false);
   const [windSyncCount, setWindSyncCount] = useState<number>(0);
   const [showChangelog, setShowChangelog] = useState<boolean>(true);
-  const todayIstDate = useMemo(() => {
-    const iso = getCurrentIstDateTime().date;
-    const [y, m, d] = iso.split('-').map(Number);
-    const dateObj = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
-    const readable = dateObj.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      timeZone: 'UTC',
-    });
-    return { iso, readable };
+  const [diwaliEasterEggActive, setDiwaliEasterEggActive] = useState<boolean>(true);
+  const [diwaliTriggerKey, setDiwaliTriggerKey] = useState<number>(1);
+  const diwaliTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerDiwaliEasterEgg = useCallback(() => {
+    if (diwaliTimerRef.current) {
+      clearTimeout(diwaliTimerRef.current);
+    }
+    setDiwaliEasterEggActive(true);
+    setDiwaliTriggerKey((k) => k + 1);
+    diwaliTimerRef.current = setTimeout(() => {
+      setDiwaliEasterEggActive(false);
+      diwaliTimerRef.current = null;
+    }, 10000);
+  }, []);
+
+  useEffect(() => {
+    diwaliTimerRef.current = setTimeout(() => {
+      setDiwaliEasterEggActive(false);
+      diwaliTimerRef.current = null;
+    }, 10000);
+    return () => {
+      if (diwaliTimerRef.current) {
+        clearTimeout(diwaliTimerRef.current);
+      }
+    };
   }, []);
   const syncSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
@@ -712,22 +729,40 @@ export default function App() {
       id="top"
       className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900 overflow-x-hidden selection:bg-sky-500/20 selection:text-sky-900"
     >
+      {/* Festive 10-Second Diwali Firecrackers Easter Egg Canvas Overlay */}
+      <DiwaliFirecrackers
+        active={diwaliEasterEggActive}
+        triggerKey={diwaliTriggerKey}
+        darkMode={darkMode}
+      />
+
       {/* Top Navigation Bar (Glassmorphic Sticky Header + Mobile Section Jump Strip) */}
       <header className="sticky top-0 z-30 bg-white/88 backdrop-blur-xl border-b border-slate-200/80 px-3 sm:px-6 py-2.5 sm:py-3 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-8">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-3">
           {/* Zone 1: Brand wordmark + vibecoded credit */}
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 min-w-0">
+          <div className="flex flex-wrap xl:flex-nowrap items-center gap-x-2.5 gap-y-0.5 min-w-0 shrink-0">
             <a
               href="#top"
               className="flex items-center gap-2 text-base sm:text-lg font-display font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 group"
             >
               <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
-                <Compass className="w-4 h-4" />
+                <Compass className="w-4 h-4 animate-compass" />
               </span>
               <span>AeroLog VFR</span>
             </a>
-            <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 bg-slate-100/80 border border-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap">
-              vibe coded with <span className="text-rose-500">♥</span> by{' '}
+            <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 bg-slate-100/80 border border-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+              <span>vibe coded with</span>
+              <button
+                id="diwali-heart-easter-egg"
+                type="button"
+                onClick={triggerDiwaliEasterEgg}
+                title="✨ Easter Egg: Launch 10s Diwali Firecrackers!"
+                aria-label="Launch 10-second Diwali Firecrackers Easter Egg"
+                className="text-rose-500 hover:scale-125 active:scale-95 transition-transform cursor-pointer focus:outline-none"
+              >
+                ♥
+              </button>
+              <span>by</span>
               <a
                 href="https://www.instagram.com/amartya320/"
                 target="_blank"
@@ -770,8 +805,32 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: Changelog & Dark Mode Toggle */}
+          {/* Zone 3: 10s Diwali Easter Egg, Changelog & Dark Mode Toggle */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              id="diwali-easter-egg-btn"
+              type="button"
+              onClick={triggerDiwaliEasterEgg}
+              aria-label="Trigger 10-second Diwali Firecrackers Easter Egg"
+              title="🪔 Easter Egg: Launch 10-second Diwali Firecrackers celebration!"
+              className={`p-1.5 sm:px-2.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
+                diwaliEasterEggActive
+                  ? 'bg-amber-50/90 border-amber-400 text-amber-900 shadow-[0_0_12px_rgba(245,158,11,0.28)]'
+                  : 'bg-white border-slate-200/90 text-slate-600 hover:bg-amber-50/60 hover:border-amber-300 hover:text-amber-700'
+              }`}
+            >
+              <Flame
+                className={`w-3.5 h-3.5 shrink-0 transition-transform ${
+                  diwaliEasterEggActive
+                    ? 'text-amber-500 animate-bounce scale-110'
+                    : 'text-amber-500/80 hover:scale-110'
+                }`}
+              />
+              <span className="hidden lg:inline">
+                {diwaliEasterEggActive ? '10s Diwali ✨' : '🪔'}
+              </span>
+            </button>
+
             <button
               id="changelog-toggle-btn"
               type="button"
@@ -807,15 +866,15 @@ export default function App() {
               }`}
             >
               {darkMode ? (
-                <>
+                <span key="sun" className="flex items-center gap-1.5 animate-theme-icon">
                   <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   <span>Light Mode</span>
-                </>
+                </span>
               ) : (
-                <>
+                <span key="moon" className="flex items-center gap-1.5 animate-theme-icon">
                   <Moon className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                   <span>Dark Mode</span>
-                </>
+                </span>
               )}
             </button>
           </div>
@@ -867,12 +926,12 @@ export default function App() {
             id="changelog-notification"
             role="status"
             aria-label="Latest Changelog Notification"
-            className="aerolog-card bg-white border border-sky-200/90 rounded-2xl p-3.5 sm:p-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_25px_-5px_rgba(14,165,233,0.08)]"
+            className="aerolog-card animate-slide-down bg-white border border-sky-200/90 rounded-2xl p-3.5 sm:p-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_25px_-5px_rgba(14,165,233,0.08)]"
           >
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-sky-50/90 text-sky-800 border border-sky-200/80">
-                  <Sparkles className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                  <Sparkles className="w-3.5 h-3.5 text-sky-500 shrink-0 animate-pulse" />
                   Changelog Update
                 </span>
                 <span
@@ -880,37 +939,47 @@ export default function App() {
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-slate-100/90 text-slate-700 border border-slate-200/80"
                 >
                   <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
-                  {todayIstDate.readable} ({todayIstDate.iso})
+                  07-11-2026
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 flex-1 lg:mx-2">
-                <div className="aerolog-subcard bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 flex-1 lg:mx-2">
+                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
                   <span className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
                   <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">Updated Modern UI:</strong>{' '}
+                    <strong className="font-semibold text-slate-900">Modern UI &amp; Animations:</strong>{' '}
                     <span className="text-slate-600">
-                      Refined EFB command deck, streamlined controls &amp; true AMOLED black dark mode.
+                      Refined EFB command deck, smooth 60fps UI animations &amp; true AMOLED black dark mode.
                     </span>
                   </div>
                 </div>
 
-                <div className="aerolog-subcard bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up-delay-1 bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                  <div className="text-xs leading-snug">
+                    <strong className="font-semibold text-slate-900">10s Diwali Easter Egg:</strong>{' '}
+                    <span className="text-slate-600">
+                      10-second Diwali firecrackers &amp; phuljhari sparkler celebration (click 🪔 or ♥).
+                    </span>
+                  </div>
+                </div>
+
+                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up-delay-1 bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
                   <span className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
                   <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">Rounded Off Wind Direction:</strong>{' '}
+                    <strong className="font-semibold text-slate-900">Rounded Wind Direction:</strong>{' '}
                     <span className="text-slate-600">
                       Wind direction degrees automatically rounded to the nearest 10° increment.
                     </span>
                   </div>
                 </div>
 
-                <div className="aerolog-subcard bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up-delay-2 bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
                   <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">More Accurate Wind Data:</strong>{' '}
+                    <strong className="font-semibold text-slate-900">Accurate Wind Data &amp; Sync:</strong>{' '}
                     <span className="text-slate-600">
-                      Live Open-Meteo ECMWF IFS / GFS / ICON upper-air winds synced to IST flight time.
+                      Live Open-Meteo ECMWF IFS / GFS / ICON upper-air winds with one-click Sync Winds.
                     </span>
                   </div>
                 </div>
@@ -933,7 +1002,7 @@ export default function App() {
         {/* Section 1: Departure Date/Time, Aircraft Performance & Fuel Reserves Ribbon */}
         <section
           id="flight-parameters"
-          className="aerolog-card bg-white border border-slate-200/85 rounded-2xl p-4 sm:p-5 space-y-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_30px_-5px_rgba(15,23,42,0.04)]"
+          className="aerolog-card animate-fade-up bg-white border border-slate-200/85 rounded-2xl p-4 sm:p-5 space-y-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_30px_-5px_rgba(15,23,42,0.04)]"
         >
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 border-b border-slate-100 pb-3.5">
             <div>

@@ -149,9 +149,9 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
               type="button"
               disabled={waypoints.length < 2}
               onClick={onReverseRoute}
-              className="px-3.5 py-1.5 text-xs font-bold bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0"
+              className="group px-3.5 py-1.5 text-xs font-bold bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0"
             >
-              <ArrowUpDown className="w-3.5 h-3.5" />
+              <ArrowUpDown className="w-3.5 h-3.5 transition-transform duration-300 group-hover:rotate-180" />
               Reverse Route (DEP ↔ DEST)
             </button>
 
@@ -163,7 +163,7 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                 disabled={isSyncingWinds || waypoints.length === 0}
                 className={`px-3 py-1.5 text-xs font-semibold border rounded-xl flex items-center gap-1.5 transition-all disabled:opacity-40 whitespace-nowrap shrink-0 shadow-2xs ${
                   windSyncSuccess
-                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-400'
+                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-400 animate-sync-glow'
                     : 'bg-sky-50/90 hover:bg-sky-100 text-sky-900 border-sky-200/90'
                 }`}
               >
@@ -341,7 +341,7 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
       {/* Ordered Route Sequence (DEP -> WPT 1..N -> DEST) */}
       <div className="divide-y divide-slate-100 max-h-[310px] overflow-y-auto pr-1 flex-1">
         {waypoints.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-500 space-y-1">
+          <div className="py-8 text-center text-xs text-slate-500 space-y-1 animate-fade-up">
             <p className="font-semibold text-slate-700">
               No waypoints in current flight plan
             </p>
@@ -362,8 +362,8 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
 
             return (
               <div
-                key={wp.id}
-                className="py-2.5 px-1.5 hover:bg-slate-50/70 rounded-xl transition-colors flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-xs"
+                key={`${wp.id}-${idx}`}
+                className="animate-row-enter py-2.5 px-1.5 hover:bg-slate-50/70 rounded-xl transition-all duration-200 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-xs"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span

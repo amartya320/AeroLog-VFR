@@ -7,6 +7,10 @@
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: #f4f7fb;
@@ -15,7 +19,7 @@
     padding: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.28s cubic-bezier(0.22, 1, 0.36, 1), color 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   h1, h2, h3, .font-display {
@@ -31,6 +35,183 @@
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   UI ANIMATIONS & MICRO-INTERACTIONS (60fps Hardware-Accelerated)
+   ========================================================================== */
+@keyframes aerolog-fade-up {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes aerolog-slide-down {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes aerolog-scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes aerolog-row-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(-8px, 4px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes aerolog-theme-spin {
+  0% {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.65);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes aerolog-compass-rock {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-14deg) scale(1.05);
+  }
+  75% {
+    transform: rotate(14deg) scale(1.05);
+  }
+}
+
+@keyframes aerolog-sync-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+}
+
+.animate-fade-up {
+  animation: aerolog-fade-up 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-fade-up-delay-1 {
+  animation: aerolog-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
+}
+
+.animate-fade-up-delay-2 {
+  animation: aerolog-fade-up 0.48s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+
+.animate-fade-up-delay-3 {
+  animation: aerolog-fade-up 0.52s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+}
+
+.animate-slide-down {
+  animation: aerolog-slide-down 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-scale-in {
+  animation: aerolog-scale-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-row-enter {
+  animation: aerolog-row-enter 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-theme-icon {
+  animation: aerolog-theme-spin 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-compass {
+  animation: aerolog-compass-rock 6s ease-in-out infinite;
+}
+
+.animate-sync-glow {
+  animation: aerolog-sync-glow 1.4s ease-out infinite;
+}
+
+/* Tactile button & interactive surface micro-physics */
+button:not(:disabled) {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0) scale(0.97);
+}
+
+.aerolog-card {
+  transition:
+    background-color 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.aerolog-subcard {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease;
+}
+
+.aerolog-subcard:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.aerolog-hover-lift {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.aerolog-hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 
 /* Modern subtle custom scrollbars */
