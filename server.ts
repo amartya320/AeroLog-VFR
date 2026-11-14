@@ -19,7 +19,7 @@ import {
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
@@ -310,7 +310,7 @@ app.get('/api/imd-satellite/image', async (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     process.env.DISABLE_HMR = 'true';
-    const vite = await createViteServer({
+    const vitePromise = createViteServer({
       server: {
         middlewareMode: true,
         hmr: false,
@@ -333,7 +333,15 @@ async function startServer() {
       ],
       appType: 'spa',
     });
-    app.use(vite.middlewares);
+
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -348,3 +356,4 @@ async function startServer() {
 }
 
 startServer();
+

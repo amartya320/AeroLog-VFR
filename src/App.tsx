@@ -15,9 +15,6 @@ import {
   Hash,
   Moon,
   Sun,
-  Sparkles,
-  Flame,
-  X,
 } from 'lucide-react';
 import {
   ALTITUDE_LEVELS,
@@ -46,7 +43,6 @@ import { NavLogTable } from './components/NavLogTable';
 import { WaypointManager } from './components/WaypointManager';
 import { AlternatePlanner } from './components/AlternatePlanner';
 import { EditableNumberInput } from './components/EditableNumberInput';
-import { DiwaliFirecrackers } from './components/DiwaliFirecrackers';
 
 export default function App() {
   const [activePresetId, setActivePresetId] = useState<string>(PRESET_ROUTES[0].id);
@@ -70,42 +66,6 @@ export default function App() {
   const [isSyncingWinds, setIsSyncingWinds] = useState<boolean>(false);
   const [windSyncSuccess, setWindSyncSuccess] = useState<boolean>(false);
   const [windSyncCount, setWindSyncCount] = useState<number>(0);
-  const [showChangelog, setShowChangelog] = useState<boolean>(true);
-  const [diwaliEasterEggActive, setDiwaliEasterEggActive] = useState<boolean>(true);
-  const [diwaliTriggerKey, setDiwaliTriggerKey] = useState<number>(1);
-  const diwaliTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const triggerDiwaliEasterEgg = useCallback(() => {
-    if (diwaliTimerRef.current) {
-      clearTimeout(diwaliTimerRef.current);
-    }
-    setDiwaliEasterEggActive(true);
-    setDiwaliTriggerKey((k) => k + 1);
-    diwaliTimerRef.current = setTimeout(() => {
-      setDiwaliEasterEggActive(false);
-      diwaliTimerRef.current = null;
-    }, 10000);
-  }, []);
-
-  useEffect(() => {
-    diwaliTimerRef.current = setTimeout(() => {
-      setDiwaliEasterEggActive(false);
-      diwaliTimerRef.current = null;
-    }, 10000);
-    return () => {
-      if (diwaliTimerRef.current) {
-        clearTimeout(diwaliTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!showChangelog) return;
-    const timer = setTimeout(() => {
-      setShowChangelog(false);
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [showChangelog]);
   const syncSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
     'Upper-air winds synced via Open-Meteo ECMWF IFS for 5,000 ft (850 hPa)'
@@ -737,39 +697,23 @@ export default function App() {
       id="top"
       className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900 overflow-x-hidden selection:bg-sky-500/20 selection:text-sky-900"
     >
-      {/* Festive 10-Second Diwali Firecrackers Easter Egg Canvas Overlay */}
-      <DiwaliFirecrackers
-        active={diwaliEasterEggActive}
-        triggerKey={diwaliTriggerKey}
-        darkMode={darkMode}
-      />
-
-      {/* Top Navigation Bar (Glassmorphic Sticky Header + Mobile Section Jump Strip) */}
-      <header className="sticky top-0 z-30 bg-white/88 backdrop-blur-xl border-b border-slate-200/80 px-3 sm:px-6 py-2.5 sm:py-3 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-2 sm:gap-3">
+      {/* Top Navigation Bar (Glassmorphic Sticky Header + Mobile/Tablet Section Jump Strip) */}
+      <header className="sticky top-0 z-30 bg-white/88 backdrop-blur-xl border-b border-slate-200/80 px-2.5 sm:px-5 lg:px-6 py-2 sm:py-2.5 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
+        <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-1.5 sm:gap-3">
           {/* Zone 1: Brand wordmark + vibecoded credit */}
-          <div className="flex flex-wrap xl:flex-nowrap items-center gap-x-2.5 gap-y-0.5 min-w-0 shrink-0">
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
             <a
               href="#top"
-              className="flex items-center gap-2 text-base sm:text-lg font-display font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 group"
+              className="flex items-center gap-1.5 sm:gap-2 text-sm sm:text-lg font-display font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 group"
             >
-              <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
-                <Compass className="w-4 h-4 animate-compass" />
+              <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                <Compass className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-compass" />
               </span>
               <span>AeroLog VFR</span>
             </a>
-            <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 bg-slate-100/80 border border-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+            <span className="hidden sm:inline-flex text-[10px] sm:text-[11px] font-mono font-medium text-slate-500 bg-slate-100/80 border border-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap items-center gap-1">
               <span>vibe coded with</span>
-              <button
-                id="diwali-heart-easter-egg"
-                type="button"
-                onClick={triggerDiwaliEasterEgg}
-                title="✨ Easter Egg: Launch 10s Diwali Firecrackers!"
-                aria-label="Launch 10-second Diwali Firecrackers Easter Egg"
-                className="text-rose-500 hover:scale-125 active:scale-95 transition-transform cursor-pointer focus:outline-none"
-              >
-                ♥
-              </button>
+              <span className="text-rose-500">♥</span>
               <span>by</span>
               <a
                 href="https://www.instagram.com/amartya320/"
@@ -782,10 +726,10 @@ export default function App() {
             </span>
           </div>
 
-          {/* Zone 2: 4 concise single-line navigation links */}
+          {/* Zone 2: 4 concise single-line navigation links (Desktop >= 1280px; Tablet/Phone uses quick-jump bar below) */}
           <nav
             aria-label="Primary Section Navigation"
-            className="hidden md:flex items-center gap-1 bg-slate-100/80 border border-slate-200/70 p-1 rounded-xl text-xs font-semibold text-slate-600 aerolog-segmented"
+            className="hidden xl:flex items-center gap-1 bg-slate-100/80 border border-slate-200/70 p-1 rounded-xl text-xs font-semibold text-slate-600 aerolog-segmented"
           >
             <a
               href="#flight-parameters"
@@ -813,49 +757,8 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: 10s Diwali Easter Egg, Changelog & Dark Mode Toggle */}
+          {/* Zone 3: Dark Mode Toggle */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              id="diwali-easter-egg-btn"
-              type="button"
-              onClick={triggerDiwaliEasterEgg}
-              aria-label="Trigger 10-second Diwali Firecrackers Easter Egg"
-              title="🪔 Easter Egg: Launch 10-second Diwali Firecrackers celebration!"
-              className={`p-1.5 sm:px-2.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
-                diwaliEasterEggActive
-                  ? 'bg-amber-50/90 border-amber-400 text-amber-900 shadow-[0_0_12px_rgba(245,158,11,0.28)]'
-                  : 'bg-white border-slate-200/90 text-slate-600 hover:bg-amber-50/60 hover:border-amber-300 hover:text-amber-700'
-              }`}
-            >
-              <Flame
-                className={`w-3.5 h-3.5 shrink-0 transition-transform ${
-                  diwaliEasterEggActive
-                    ? 'text-amber-500 animate-bounce scale-110'
-                    : 'text-amber-500/80 hover:scale-110'
-                }`}
-              />
-              <span className="hidden lg:inline">
-                {diwaliEasterEggActive ? '10s Diwali ✨' : '🪔'}
-              </span>
-            </button>
-
-            <button
-              id="changelog-toggle-btn"
-              type="button"
-              onClick={() => setShowChangelog((prev) => !prev)}
-              aria-expanded={showChangelog}
-              title="View latest AeroLog VFR changelog & release notes"
-              className={`px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
-                showChangelog
-                  ? 'bg-sky-50/90 border-sky-300 text-sky-800 hover:bg-sky-100'
-                  : 'bg-white border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-sky-500 shrink-0" />
-              <span>What&apos;s New</span>
-              <span className="hidden sm:inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            </button>
-
             <button
               id="dark-mode-toggle"
               type="button"
@@ -867,7 +770,7 @@ export default function App() {
                   ? 'Switch to Daylight Kneeboard (Light Mode)'
                   : 'Switch to Cockpit Night View (Dark Mode)'
               }
-              className={`px-3 sm:px-3.5 py-1.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
+              className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
                 darkMode
                   ? 'bg-amber-500/15 border-amber-400/40 text-amber-300 hover:bg-amber-500/25'
                   : 'bg-white border-slate-200/90 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
@@ -876,50 +779,53 @@ export default function App() {
               {darkMode ? (
                 <span key="sun" className="flex items-center gap-1.5 animate-theme-icon">
                   <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>Light Mode</span>
+                  <span className="hidden sm:inline">Light Mode</span>
+                  <span className="sm:hidden">Light</span>
                 </span>
               ) : (
                 <span key="moon" className="flex items-center gap-1.5 animate-theme-icon">
                   <Moon className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                  <span>Dark Mode</span>
+                  <span className="hidden sm:inline">Dark Mode</span>
+                  <span className="sm:hidden">Dark</span>
                 </span>
               )}
             </button>
           </div>
         </div>
 
-        {/* Mobile Quick-Jump Section Bar (< 768px) */}
+        {/* Phone & iPad Quick-Jump Section Bar (< 1280px) */}
         <nav
           aria-label="Mobile Quick Section Jump"
-          className="md:hidden grid grid-cols-5 gap-1 pt-2 mt-2 border-t border-slate-100"
+          className="xl:hidden grid grid-cols-5 gap-1 sm:gap-1.5 pt-2 mt-2 border-t border-slate-100"
         >
           <a
             href="#flight-parameters"
-            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
+            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
           >
             1. Params
           </a>
           <a
             href="#map-waypoints"
-            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
+            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
           >
             2. Map/Wx
           </a>
           <a
             href="#wind-triangle"
-            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
+            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
           >
-            3. Waypoints
+            <span className="hidden sm:inline">3. Waypoints</span>
+            <span className="sm:hidden">3. Wpts</span>
           </a>
           <a
             href="#alternate-planner"
-            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
+            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
           >
             4. Alt/Fuel
           </a>
           <a
             href="#navlog-sheet"
-            className="px-1.5 py-1 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-center truncate"
+            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
           >
             5. NavLog
           </a>
@@ -928,85 +834,6 @@ export default function App() {
 
       {/* Main Workspace Container */}
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-6 space-y-5 sm:space-y-6">
-        {/* Changelog Notification Banner */}
-        {showChangelog && (
-          <aside
-            id="changelog-notification"
-            role="status"
-            aria-label="Latest Changelog Notification"
-            className="aerolog-card animate-slide-down bg-white border border-sky-200/90 rounded-2xl p-3.5 sm:p-4 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_25px_-5px_rgba(14,165,233,0.08)]"
-          >
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-sky-50/90 text-sky-800 border border-sky-200/80">
-                  <Sparkles className="w-3.5 h-3.5 text-sky-500 shrink-0 animate-pulse" />
-                  Changelog Update
-                </span>
-                <span
-                  id="changelog-date-badge"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-slate-100/90 text-slate-700 border border-slate-200/80"
-                >
-                  <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
-                  07-11-2026
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 flex-1 lg:mx-2">
-                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                  <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">Modern UI &amp; Animations:</strong>{' '}
-                    <span className="text-slate-600">
-                      Refined EFB command deck, smooth 60fps UI animations &amp; true AMOLED black dark mode.
-                    </span>
-                  </div>
-                </div>
-
-                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up-delay-1 bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
-                  <span className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                  <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">10s Diwali Easter Egg:</strong>{' '}
-                    <span className="text-slate-600">
-                      10-second Diwali firecrackers &amp; phuljhari sparkler celebration (click 🪔 or ♥).
-                    </span>
-                  </div>
-                </div>
-
-                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up-delay-1 bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0" />
-                  <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">Rounded Wind Direction:</strong>{' '}
-                    <span className="text-slate-600">
-                      Wind direction degrees automatically rounded to the nearest 10° increment.
-                    </span>
-                  </div>
-                </div>
-
-                <div className="aerolog-subcard aerolog-hover-lift animate-fade-up-delay-2 bg-slate-50/80 border border-slate-200/80 rounded-xl px-3 py-2 flex items-start gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                  <div className="text-xs leading-snug">
-                    <strong className="font-semibold text-slate-900">Accurate Wind Data &amp; Sync:</strong>{' '}
-                    <span className="text-slate-600">
-                      Live Open-Meteo ECMWF IFS / GFS / ICON upper-air winds with one-click Sync Winds.
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                id="dismiss-changelog-btn"
-                type="button"
-                onClick={() => setShowChangelog(false)}
-                aria-label="Dismiss changelog notification"
-                title="Dismiss changelog notification"
-                className="self-end lg:self-center p-1.5 rounded-xl bg-slate-100/80 hover:bg-slate-200/80 text-slate-500 hover:text-slate-800 border border-slate-200/80 transition-colors shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </aside>
-        )}
-
         {/* Section 1: Departure Date/Time, Aircraft Performance & Fuel Reserves Ribbon */}
         <section
           id="flight-parameters"
@@ -1014,9 +841,25 @@ export default function App() {
         >
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 border-b border-slate-100 pb-3.5">
             <div>
-              <h1 className="text-base sm:text-lg font-display font-bold text-slate-900 tracking-tight">
-                Flight Navigation Log & Upper-Air Wind Calculator
-              </h1>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h1 className="text-base sm:text-lg font-display font-bold text-slate-900 tracking-tight">
+                  Flight Navigation Log & Upper-Air Wind Calculator
+                </h1>
+                {/* Mobile compact vibecoded credit */}
+                <span className="sm:hidden text-[10px] font-mono font-medium text-slate-500 bg-slate-100/80 border border-slate-200/70 px-2 py-0.5 rounded-md whitespace-nowrap inline-flex items-center gap-1">
+                  <span>vibe coded with</span>
+                  <span className="text-rose-500">♥</span>
+                  <span>by</span>
+                  <a
+                    href="https://www.instagram.com/amartya320/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sky-600 hover:text-sky-800 font-semibold underline decoration-sky-300 underline-offset-2 transition-colors"
+                  >
+                    @amartya320
+                  </a>
+                </span>
+              </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 Set Estimated Departure Date & Time (IST), Cruise Altitude, and Free Upper-Air Weather Model (ECMWF IFS, NOAA GFS, or DWD ICON) to compute leg winds, headings, ground speeds, and fuel.
               </p>
@@ -1031,15 +874,15 @@ export default function App() {
                   updateConfig({ roundOffValues: !config.roundOffValues })
                 }
                 title="Toggle rounding off decimal values to whole integers across all distance, time, and fuel calculations"
-                className={`px-3 py-1.5 text-xs font-semibold border rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
+                className={`flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-semibold border rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 shadow-2xs ${
                   config.roundOffValues
                     ? 'bg-amber-100/90 border-amber-400 text-amber-950'
                     : 'bg-slate-50/90 border-slate-200/90 text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                <Hash className="w-3.5 h-3.5" />
+                <Hash className="w-3.5 h-3.5 shrink-0" />
                 {config.roundOffValues
-                  ? 'Round Off: ON (Whole Numbers)'
+                  ? 'Round Off: ON'
                   : 'Round Off: OFF (Decimals)'}
               </button>
 
@@ -1047,13 +890,13 @@ export default function App() {
                 id="clear-flight-plan-btn"
                 type="button"
                 onClick={handleClearFlightPlan}
-                className="px-3 py-1.5 text-xs font-semibold bg-rose-50/90 hover:bg-rose-100 text-rose-700 border border-rose-200/90 rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 sm:order-3 shadow-2xs"
+                className="flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-semibold bg-rose-50/90 hover:bg-rose-100 text-rose-700 border border-rose-200/90 rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 sm:order-3 shadow-2xs"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
                 Clear Flight Plan
               </button>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 lg:flex-initial min-w-0 sm:order-2 bg-slate-50/90 border border-slate-200/90 rounded-xl px-2.5 py-1 aerolog-subcard">
+              <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 lg:flex-initial min-w-0 sm:order-2 bg-slate-50/90 border border-slate-200/90 rounded-xl px-2.5 py-1.5 sm:py-1 aerolog-subcard">
                 <label
                   htmlFor="preset-route-select"
                   className="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0"
@@ -1077,16 +920,16 @@ export default function App() {
             </div>
           </div>
 
-          {/* Primary Flight Parameters Grid: Est Departure Date, Est Departure Time, Altitude, Wind Model, TAS, Fuel Flow, Initial Fuel, Taxi, Fixed Track */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-3 items-end">
+          {/* Primary Flight Parameters Grid: Responsive 2-col on Phone, 3x3 on iPad/Tablet, 12-col on Desktop */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-12 gap-2.5 sm:gap-3 items-end">
             {/* 1. Estimated Departure Date (IST) */}
-            <div className="col-span-1 sm:col-span-1 md:col-span-2 lg:col-span-2">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-2">
               <label
                 htmlFor="input-departure-date"
                 className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 truncate"
               >
                 <Calendar className="w-3 h-3 text-sky-600 shrink-0" />
-                <span className="truncate">Est. Departure Date (IST)</span>
+                <span className="truncate">Est. Dep Date (IST)</span>
               </label>
               <input
                 id="input-departure-date"
@@ -1098,7 +941,7 @@ export default function App() {
             </div>
 
             {/* 2. Estimated Departure Time (IST) */}
-            <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-1">
               <label
                 htmlFor="input-airborne-time"
                 className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 whitespace-nowrap"
@@ -1116,7 +959,7 @@ export default function App() {
             </div>
 
             {/* 3. Cruising Altitude (Pressure Level) */}
-            <div className="col-span-2 sm:col-span-1 md:col-span-3 lg:col-span-2">
+            <div className="col-span-2 sm:col-span-1 xl:col-span-2">
               <label
                 htmlFor="select-altitude-ft"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1138,7 +981,7 @@ export default function App() {
             </div>
 
             {/* 4. Free Upper-Air Wind Model Selector (Open-Meteo ECMWF IFS / NOAA GFS / DWD ICON) */}
-            <div className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2">
+            <div className="col-span-2 sm:col-span-1 xl:col-span-2">
               <label
                 htmlFor="select-wind-model"
                 className="block text-[11px] font-semibold text-emerald-900 mb-1.5 truncate"
@@ -1161,7 +1004,7 @@ export default function App() {
             </div>
 
             {/* 5. Cruise TAS (kt) */}
-            <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-1">
               <label
                 htmlFor="input-tas-kt"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1180,7 +1023,7 @@ export default function App() {
             </div>
 
             {/* 6. Fuel Flow (L/hr) */}
-            <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-1">
               <label
                 htmlFor="input-fuel-flow"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1199,7 +1042,7 @@ export default function App() {
             </div>
 
             {/* 7. Initial Block Fuel On Board (L) */}
-            <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-1">
               <label
                 htmlFor="input-initial-fuel"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1220,7 +1063,7 @@ export default function App() {
             </div>
 
             {/* 8. Taxi Fuel (L) */}
-            <div className="col-span-1 sm:col-span-1 md:col-span-1 lg:col-span-1">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-1">
               <label
                 htmlFor="input-taxi-fuel"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1239,7 +1082,7 @@ export default function App() {
             </div>
 
             {/* 9. Whole-Flight Fixed Track Override (Optional) */}
-            <div className="col-span-2 sm:col-span-2 md:col-span-6 lg:col-span-1">
+            <div className="col-span-2 sm:col-span-1 xl:col-span-1">
               <label
                 htmlFor="input-global-track"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1271,31 +1114,40 @@ export default function App() {
           </div>
 
           {/* Flight Summary KPI Telemetry Ribbon */}
-          <div className="aerolog-subcard bg-slate-50/90 border border-slate-200/80 rounded-xl px-3.5 py-2.5 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 text-xs">
-            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-slate-700 font-mono">
-              <span className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
-                <Navigation className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="text-slate-500 font-sans font-medium">Total Dist:</span>
-                <strong className="text-slate-900">
-                  {formatCalc(navLogSummary.totalDistanceNm, config.roundOffValues)} NM
-                </strong>
-              </span>
-              <span className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
-                <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="text-slate-500 font-sans font-medium">Trip Time:</span>
-                <strong className="text-slate-900">
-                  {formatCalc(navLogSummary.totalTimeMin, config.roundOffValues)} min (ETA{' '}
-                  {navLogSummary.finalEta})
-                </strong>
-              </span>
-              <span className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border border-slate-200/80 shadow-2xs">
-                <Compass className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                <span className="text-slate-500 font-sans font-medium">Avg G/S:</span>
-                <strong className="text-slate-900">
-                  {formatCalc(navLogSummary.averageGsKt, config.roundOffValues)} kt
-                </strong>
-              </span>
-              <span className="w-full lg:w-auto pt-1.5 lg:pt-0 border-t lg:border-t-0 border-slate-200/70 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs bg-white lg:px-2.5 lg:py-1 lg:rounded-lg lg:border lg:border-slate-200/80 lg:shadow-2xs">
+          <div className="aerolog-subcard bg-slate-50/90 border border-slate-200/80 rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 text-xs">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-x-3 sm:gap-y-1.5 text-slate-700 font-mono">
+              <div className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2.5">
+                <span className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5 bg-white px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                  <span className="flex items-center gap-1 text-[10px] sm:text-xs text-slate-500 font-sans font-medium">
+                    <Navigation className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 shrink-0" />
+                    <span>Dist</span>
+                  </span>
+                  <strong className="text-slate-900 text-[11px] sm:text-xs whitespace-nowrap">
+                    {formatCalc(navLogSummary.totalDistanceNm, config.roundOffValues)} NM
+                  </strong>
+                </span>
+                <span className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5 bg-white px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                  <span className="flex items-center gap-1 text-[10px] sm:text-xs text-slate-500 font-sans font-medium">
+                    <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 shrink-0" />
+                    <span>Time · ETA</span>
+                  </span>
+                  <strong className="text-slate-900 text-[11px] sm:text-xs whitespace-nowrap">
+                    {formatCalc(navLogSummary.totalTimeMin, config.roundOffValues)}m ·{' '}
+                    {navLogSummary.finalEta}
+                  </strong>
+                </span>
+                <span className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5 bg-white px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg border border-slate-200/80 shadow-2xs">
+                  <span className="flex items-center gap-1 text-[10px] sm:text-xs text-slate-500 font-sans font-medium">
+                    <Compass className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-sky-600 shrink-0" />
+                    <span>Avg G/S</span>
+                  </span>
+                  <strong className="text-slate-900 text-[11px] sm:text-xs whitespace-nowrap">
+                    {formatCalc(navLogSummary.averageGsKt, config.roundOffValues)} kt
+                  </strong>
+                </span>
+              </div>
+
+              <span className="w-full lg:w-auto px-2.5 py-1.5 sm:py-1 rounded-lg border border-slate-200/80 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] sm:text-xs bg-white shadow-2xs">
                 <Fuel className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <span>
                   Trip:{' '}
@@ -1358,7 +1210,7 @@ export default function App() {
               </span>
             </div>
 
-            <div className="text-[11px] text-slate-500 font-mono truncate px-2 py-0.5 bg-white/80 rounded-md border border-slate-200/60">
+            <div className="text-[11px] text-slate-500 font-mono truncate px-2.5 py-1 bg-white/80 rounded-lg border border-slate-200/60">
               {windSyncStatus}
             </div>
           </div>

@@ -144,15 +144,16 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
             <button
               type="button"
               disabled={waypoints.length < 2}
               onClick={onReverseRoute}
-              className="group px-3.5 py-1.5 text-xs font-bold bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0"
+              className="group flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-bold bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0"
             >
-              <ArrowUpDown className="w-3.5 h-3.5 transition-transform duration-300 group-hover:rotate-180" />
-              Reverse Route (DEP ↔ DEST)
+              <ArrowUpDown className="w-3.5 h-3.5 transition-transform duration-300 group-hover:rotate-180 shrink-0" />
+              <span className="hidden sm:inline">Reverse Route (DEP ↔ DEST)</span>
+              <span className="sm:hidden">Reverse (DEP↔DEST)</span>
             </button>
 
             {onSyncAllWinds && (
@@ -161,7 +162,7 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                 type="button"
                 onClick={onSyncAllWinds}
                 disabled={isSyncingWinds || waypoints.length === 0}
-                className={`px-3 py-1.5 text-xs font-semibold border rounded-xl flex items-center gap-1.5 transition-all disabled:opacity-40 whitespace-nowrap shrink-0 shadow-2xs ${
+                className={`flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-semibold border rounded-xl flex items-center gap-1.5 transition-all disabled:opacity-40 whitespace-nowrap shrink-0 shadow-2xs ${
                   windSyncSuccess
                     ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-400 animate-sync-glow'
                     : 'bg-sky-50/90 hover:bg-sky-100 text-sky-900 border-sky-200/90'
@@ -172,9 +173,9 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                 />
                 <span>
                   {isSyncingWinds
-                    ? 'Syncing Winds...'
+                    ? 'Syncing...'
                     : windSyncSuccess
-                    ? `✓ Winds Synced (${selectedAltitudeFt.toLocaleString()} ft)`
+                    ? `✓ Synced (${selectedAltitudeFt.toLocaleString()} ft)`
                     : `Sync Winds (${selectedAltitudeFt.toLocaleString()} ft)`}
                 </span>
               </button>
@@ -190,29 +191,31 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-1.5 text-xs font-semibold bg-slate-50/90 hover:bg-slate-100 text-slate-800 border border-slate-200/90 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-2xs"
+              className="flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-slate-50/90 hover:bg-slate-100 text-slate-800 border border-slate-200/90 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-2xs"
             >
-              <Upload className="w-3.5 h-3.5" />
-              Import Waypoints
+              <Upload className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Import Waypoints</span>
+              <span className="sm:hidden">Import KML</span>
             </button>
 
             <button
               type="button"
               disabled={waypoints.length === 0}
               onClick={handleExportKml}
-              className="px-3 py-1.5 text-xs font-semibold bg-slate-50/90 hover:bg-slate-100 disabled:opacity-40 text-slate-800 border border-slate-200/90 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-2xs"
+              className="flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-slate-50/90 hover:bg-slate-100 disabled:opacity-40 text-slate-800 border border-slate-200/90 rounded-xl flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 shadow-2xs"
             >
-              <Download className="w-3.5 h-3.5" />
-              Export Waypoints
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Export Waypoints</span>
+              <span className="sm:hidden">Export KML</span>
             </button>
 
             {waypoints.length > 0 && (
               <button
                 type="button"
                 onClick={onClearAllWaypoints}
-                className="px-3 py-1.5 text-xs font-semibold bg-rose-50/90 hover:bg-rose-100 text-rose-700 border border-rose-200/90 rounded-xl flex items-center gap-1 transition-all whitespace-nowrap shrink-0 shadow-2xs"
+                className="px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-rose-50/90 hover:bg-rose-100 text-rose-700 border border-rose-200/90 rounded-xl flex items-center justify-center gap-1 transition-all whitespace-nowrap shrink-0 shadow-2xs"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
                 Clear
               </button>
             )}
@@ -388,7 +391,7 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                     className="font-mono font-semibold text-slate-900 bg-slate-50/90 border border-slate-200/90 focus:border-sky-500 focus:bg-white rounded-lg px-2.5 py-1 min-w-0 flex-1 sm:flex-initial sm:w-36 focus:outline-none transition-all"
                   />
 
-                  <div className="hidden md:flex items-center gap-1.5 font-mono text-[11px] text-slate-500">
+                  <div className="hidden lg:flex items-center gap-1.5 font-mono text-[11px] text-slate-500">
                     <input
                       type="number"
                       step="any"
@@ -433,7 +436,7 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto shrink-0">
-                  <span className="font-mono text-[10px] text-slate-500 md:hidden">
+                  <span className="font-mono text-[10px] text-slate-500 lg:hidden">
                     {wp.lat.toFixed(3)}°, {wp.lng.toFixed(3)}°
                   </span>
 

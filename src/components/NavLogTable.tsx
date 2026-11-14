@@ -42,9 +42,9 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
         <span className="font-mono font-semibold text-sky-700">Swipe table ↔</span>
       </div>
       {/* Main NavLog Grid (Estimated Pre-Flight Columns Only) */}
-      <div className="overflow-x-auto overscroll-x-contain">
+      <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
         <table
-          className="w-full min-w-[820px] border-collapse text-xs font-mono tabular-nums"
+          className="w-full min-w-[760px] border-collapse text-xs font-mono tabular-nums"
           aria-label="Flight Navigation Log Table"
         >
           <thead>
@@ -52,13 +52,13 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
             <tr className="bg-slate-100/95 text-slate-900 border-b border-slate-300">
               <th
                 rowSpan={2}
-                className="border-r border-slate-300 px-3 py-2.5 text-left font-display font-bold text-xs w-32"
+                className="border-r border-slate-300 px-2.5 sm:px-3 py-2 sm:py-2.5 text-left font-display font-bold text-xs w-28 sm:w-32"
               >
                 From
               </th>
               <th
                 rowSpan={2}
-                className="border-r-2 border-slate-400 px-3 py-2.5 text-left font-display font-bold text-xs w-32"
+                className="border-r-2 border-slate-400 px-2.5 sm:px-3 py-2 sm:py-2.5 text-left font-display font-bold text-xs w-28 sm:w-32"
               >
                 To
               </th>
