@@ -25,18 +25,29 @@ import {
   WIND_MODEL_OPTIONS,
   Waypoint,
   WindModelId,
+  adjustWaypointsForLegEdit,
   computeNavLog,
   formatCalc,
   generateWaypointsAlongStraightLine,
   getClosestAltitudeLevel,
   getCurrentIstDateTime,
   insertEnRouteWaypoint,
+  resetWaypointLegCustomization,
   restoreFreeformWaypoints,
+  reverseWaypointsWithLegs,
   roundWindDirToTenDeg,
   snapWaypointsToStraightLine,
   updateEndpointWaypoint,
 } from './utils/navlogMath';
 import { PRESET_ROUTES } from './utils/presetRoutes';
+import {
+  ImportedRoutePayload,
+  SavedFlightRoute,
+  deleteRouteFromList,
+  loadSavedRoutes,
+  persistSavedRoutes,
+  saveRouteToList,
+} from './utils/savedRoutes';
 import { fetchUpperAirWindsBatchClient } from './utils/weatherClient';
 import { RouteMap } from './components/RouteMap';
 import { NavLogTable } from './components/NavLogTable';
@@ -66,7 +77,12 @@ export default function App() {
   const [isSyncingWinds, setIsSyncingWinds] = useState<boolean>(false);
   const [windSyncSuccess, setWindSyncSuccess] = useState<boolean>(false);
   const [windSyncCount, setWindSyncCount] = useState<number>(0);
+  const [savedRoutes, setSavedRoutes] = useState<SavedFlightRoute[]>(() =>
+    loadSavedRoutes()
+  );
+  const [activeSavedRouteId, setActiveSavedRouteId] = useState<string | null>(null);
   const syncSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const legWindDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [windSyncStatus, setWindSyncStatus] = useState<string>(
     'Upper-air winds synced via Open-Meteo ECMWF IFS for 5,000 ft (850 hPa)'
   );
@@ -282,6 +298,7 @@ export default function App() {
 
   const handleClearFlightPlan = useCallback(() => {
     setActivePresetId('custom');
+    setActiveSavedRouteId(null);
     setWaypoints([]);
     setOverrides({});
     setSelectedLegIndex(0);
@@ -294,9 +311,103 @@ export default function App() {
     );
   }, []);
 
+  const handleLoadSavedRoute = useCallback(
+    (route: SavedFlightRoute) => {
+      const currentModel = config.windModel || 'ecmwf_ifs025';
+      const nextWaypoints = route.waypoints.map((wp) => ({ ...wp }));
+      setActiveSavedRouteId(route.id);
+      setActivePresetId(`saved:${route.id}`);
+      setConfig((prev) => ({
+        ...prev,
+        routeTrackMode: route.routeTrackMode,
+        globalTrackOverrideDeg: route.globalTrackOverrideDeg,
+        alternate: route.alternate ? { ...route.alternate } : null,
+        alternateFrom: route.alternateFrom || 'DEST',
+        cruiseTasKt: route.cruiseTasKt ?? prev.cruiseTasKt,
+        fuelFlowLph: route.fuelFlowLph ?? prev.fuelFlowLph,
+        selectedAltitudeFt: route.selectedAltitudeFt ?? prev.selectedAltitudeFt,
+        windModel: currentModel,
+      }));
+      setWaypoints(nextWaypoints);
+      setOverrides({});
+      setSelectedLegIndex(0);
+      fetchUpperAirWinds(
+        nextWaypoints,
+        route.selectedAltitudeFt ?? config.selectedAltitudeFt,
+        config.departureDate,
+        config.airborneTime,
+        route.alternate ?? null,
+        currentModel
+      );
+    },
+    [
+      config.windModel,
+      config.selectedAltitudeFt,
+      config.departureDate,
+      config.airborneTime,
+      fetchUpperAirWinds,
+    ]
+  );
+
+  const handleSaveCurrentRoute = useCallback(
+    (routeName: string, overwriteId?: string) => {
+      setSavedRoutes((prev) => {
+        const { routes, savedRoute } = saveRouteToList(prev, {
+          id: overwriteId,
+          name: routeName,
+          routeTrackMode: config.routeTrackMode || 'straight',
+          globalTrackOverrideDeg: config.globalTrackOverrideDeg,
+          waypoints,
+          alternate: config.alternate,
+          alternateFrom: config.alternateFrom || 'DEST',
+          cruiseTasKt: config.cruiseTasKt,
+          fuelFlowLph: config.fuelFlowLph,
+          selectedAltitudeFt: config.selectedAltitudeFt,
+        });
+        persistSavedRoutes(routes);
+        setActiveSavedRouteId(savedRoute.id);
+        setActivePresetId(`saved:${savedRoute.id}`);
+        return routes;
+      });
+    },
+    [
+      config.routeTrackMode,
+      config.globalTrackOverrideDeg,
+      config.alternate,
+      config.alternateFrom,
+      config.cruiseTasKt,
+      config.fuelFlowLph,
+      config.selectedAltitudeFt,
+      waypoints,
+    ]
+  );
+
+  const handleDeleteSavedRoute = useCallback(
+    (routeId: string) => {
+      setSavedRoutes((prev) => {
+        const next = deleteRouteFromList(prev, routeId);
+        persistSavedRoutes(next);
+        return next;
+      });
+      if (activeSavedRouteId === routeId) {
+        setActiveSavedRouteId(null);
+        setActivePresetId('custom');
+      }
+    },
+    [activeSavedRouteId]
+  );
+
   const handleLoadPreset = (presetId: string) => {
     if (presetId === 'custom') {
       handleClearFlightPlan();
+      return;
+    }
+    if (presetId.startsWith('saved:')) {
+      const targetId = presetId.slice('saved:'.length);
+      const savedMatch = savedRoutes.find((r) => r.id === targetId);
+      if (savedMatch) {
+        handleLoadSavedRoute(savedMatch);
+      }
       return;
     }
     const found = PRESET_ROUTES.find((r) => r.id === presetId);
@@ -307,6 +418,7 @@ export default function App() {
       currentTrackMode === 'straight'
         ? snapWaypointsToStraightLine(found.waypoints)
         : found.waypoints;
+    setActiveSavedRouteId(null);
     setActivePresetId(found.id);
     setConfig({
       ...found.config,
@@ -667,21 +779,122 @@ export default function App() {
   }, []);
 
   const handleReverseRoute = useCallback(() => {
-    setWaypoints((prev) => [...prev].reverse());
+    setWaypoints((prev) => reverseWaypointsWithLegs(prev));
     setOverrides({});
+  }, []);
+
+  const scheduleDebouncedWindSync = useCallback(
+    (nextWpts: Waypoint[]) => {
+      if (legWindDebounceRef.current) {
+        clearTimeout(legWindDebounceRef.current);
+      }
+      legWindDebounceRef.current = setTimeout(() => {
+        const cur = latestSyncRef.current;
+        fetchUpperAirWinds(
+          nextWpts,
+          cur.selectedAltitudeFt,
+          cur.departureDate,
+          cur.airborneTime,
+          cur.alternate,
+          cur.windModel,
+          false
+        );
+      }, 750);
+    },
+    [fetchUpperAirWinds]
+  );
+
+  const handleAdjustWaypointLeg = useCallback(
+    (legIndex: number, edit: { distanceNm?: number; trackDeg?: number }) => {
+      const mode: RouteTrackMode = config.routeTrackMode || 'straight';
+      setWaypoints((prev) => {
+        const adjusted = adjustWaypointsForLegEdit(prev, legIndex, edit, mode);
+        if (edit.distanceNm !== undefined) {
+          scheduleDebouncedWindSync(adjusted);
+        }
+        return adjusted;
+      });
+
+      // Clear any duplicate track/distance entries in overrides so the waypoint's
+      // own customTrackDeg / customDistanceNm remains the single source of truth
+      const curWpts = latestSyncRef.current.waypoints;
+      if (legIndex >= 0 && legIndex + 1 < curWpts.length) {
+        const legId = `${curWpts[legIndex].id}->${curWpts[legIndex + 1].id}`;
+        setOverrides((prev) => {
+          const existing = prev[legId];
+          if (!existing) return prev;
+          const cleaned: LegOverride = { ...existing };
+          if (edit.distanceNm !== undefined) delete cleaned.distanceNm;
+          if (edit.trackDeg !== undefined) delete cleaned.trackDeg;
+          const next = { ...prev };
+          if (
+            cleaned.distanceNm === undefined &&
+            cleaned.trackDeg === undefined &&
+            cleaned.windDir === undefined &&
+            cleaned.windSpd === undefined
+          ) {
+            delete next[legId];
+          } else {
+            next[legId] = cleaned;
+          }
+          return next;
+        });
+      }
+    },
+    [config.routeTrackMode, scheduleDebouncedWindSync]
+  );
+
+  const handleResetWaypointLeg = useCallback((waypointId: string) => {
+    setWaypoints((prev) => resetWaypointLegCustomization(prev, waypointId));
+    setOverrides((prev) => {
+      const next: Record<string, LegOverride> = {};
+      for (const [legId, ov] of Object.entries(prev)) {
+        if (legId.endsWith(`->${waypointId}`)) {
+          const cleaned: LegOverride = { ...ov };
+          delete cleaned.trackDeg;
+          delete cleaned.distanceNm;
+          if (cleaned.windDir !== undefined || cleaned.windSpd !== undefined) {
+            next[legId] = cleaned;
+          }
+        } else {
+          next[legId] = ov;
+        }
+      }
+      return next;
+    });
   }, []);
 
   const handleUpdateLegOverride = useCallback(
     (legId: string, partial: Partial<LegOverride>) => {
-      setOverrides((prev) => ({
-        ...prev,
-        [legId]: {
-          ...(prev[legId] || {}),
-          ...partial,
-        },
-      }));
+      const curWpts = latestSyncRef.current.waypoints;
+      const legIndex = curWpts.findIndex(
+        (wp, idx) => idx < curWpts.length - 1 && `${wp.id}->${curWpts[idx + 1].id}` === legId
+      );
+
+      // Route Track and Distance edits through adjustWaypointsForLegEdit so waypoints
+      // automatically reposition along the track and persist when saved.
+      if (
+        legIndex !== -1 &&
+        (partial.distanceNm !== undefined || partial.trackDeg !== undefined)
+      ) {
+        handleAdjustWaypointLeg(legIndex, {
+          distanceNm: partial.distanceNm,
+          trackDeg: partial.trackDeg,
+        });
+      }
+
+      if (partial.windDir !== undefined || partial.windSpd !== undefined) {
+        setOverrides((prev) => ({
+          ...prev,
+          [legId]: {
+            ...(prev[legId] || {}),
+            ...(partial.windDir !== undefined ? { windDir: partial.windDir } : {}),
+            ...(partial.windSpd !== undefined ? { windSpd: partial.windSpd } : {}),
+          },
+        }));
+      }
     },
-    []
+    [handleAdjustWaypointLeg]
   );
 
   const handleResetLegOverride = useCallback((legId: string) => {
@@ -690,6 +903,11 @@ export default function App() {
       delete next[legId];
       return next;
     });
+    const parts = legId.split('->');
+    const targetWpId = parts[1];
+    if (targetWpId) {
+      setWaypoints((prev) => resetWaypointLegCustomization(prev, targetWpId));
+    }
   }, []);
 
   return (
@@ -744,16 +962,16 @@ export default function App() {
               Map & Waypoints
             </a>
             <a
-              href="#alternate-planner"
-              className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
-            >
-              Alternate & Fuel Plan
-            </a>
-            <a
               href="#navlog-sheet"
               className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
             >
               NavLog Sheet
+            </a>
+            <a
+              href="#alternate-planner"
+              className="px-3 py-1.5 rounded-lg hover:bg-white hover:text-slate-900 hover:shadow-2xs transition-all whitespace-nowrap shrink-0"
+            >
+              Alternate & Fuel Plan
             </a>
           </nav>
 
@@ -818,16 +1036,16 @@ export default function App() {
             <span className="sm:hidden">3. Wpts</span>
           </a>
           <a
-            href="#alternate-planner"
-            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
-          >
-            4. Alt/Fuel
-          </a>
-          <a
             href="#navlog-sheet"
             className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
           >
-            5. NavLog
+            4. NavLog
+          </a>
+          <a
+            href="#alternate-planner"
+            className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-semibold bg-slate-100/90 hover:bg-slate-200 text-slate-700 rounded-lg text-center whitespace-nowrap transition-colors"
+          >
+            5. Alt/Fuel
           </a>
         </nav>
       </header>
@@ -901,27 +1119,38 @@ export default function App() {
                   htmlFor="preset-route-select"
                   className="text-xs font-semibold text-slate-600 whitespace-nowrap shrink-0"
                 >
-                  Sample Flight Plan:
+                  Flight Plan:
                 </label>
                 <select
                   id="preset-route-select"
                   value={activePresetId}
                   onChange={(e) => handleLoadPreset(e.target.value)}
-                  className="flex-1 sm:w-auto sm:max-w-[200px] min-w-0 truncate text-xs font-semibold bg-transparent border-0 py-0.5 text-slate-900 focus:outline-none"
+                  className="flex-1 sm:w-auto sm:max-w-[220px] min-w-0 truncate text-xs font-semibold bg-transparent border-0 py-0.5 text-slate-900 focus:outline-none"
                 >
-                  {PRESET_ROUTES.map((route) => (
-                    <option key={route.id} value={route.id}>
-                      {route.title}
-                    </option>
-                  ))}
+                  {savedRoutes.length > 0 && (
+                    <optgroup label="Saved Routes">
+                      {savedRoutes.map((route) => (
+                        <option key={route.id} value={`saved:${route.id}`}>
+                          ★ {route.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Sample Routes">
+                    {PRESET_ROUTES.map((route) => (
+                      <option key={route.id} value={route.id}>
+                        {route.title}
+                      </option>
+                    ))}
+                  </optgroup>
                   <option value="custom">Custom / Blank Flight Plan</option>
                 </select>
               </div>
             </div>
           </div>
 
-          {/* Primary Flight Parameters Grid: Responsive 2-col on Phone, 3x3 on iPad/Tablet, 12-col on Desktop */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-12 gap-2.5 sm:gap-3 items-end">
+          {/* Primary Flight Parameters Grid: Responsive 2-col on Phone, 4x2 on iPad/Tablet, 12-col on Desktop */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-12 gap-2.5 sm:gap-3 items-end">
             {/* 1. Estimated Departure Date (IST) */}
             <div className="col-span-1 sm:col-span-1 xl:col-span-2">
               <label
@@ -941,7 +1170,7 @@ export default function App() {
             </div>
 
             {/* 2. Estimated Departure Time (IST) */}
-            <div className="col-span-1 sm:col-span-1 xl:col-span-1">
+            <div className="col-span-1 sm:col-span-1 xl:col-span-2">
               <label
                 htmlFor="input-airborne-time"
                 className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 whitespace-nowrap"
@@ -954,7 +1183,7 @@ export default function App() {
                 type="time"
                 value={config.airborneTime}
                 onChange={(e) => handleDepartureTimeChange(e.target.value)}
-                className="w-full px-2 py-2 text-xs font-mono font-bold bg-sky-50/60 border border-sky-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
+                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-sky-50/60 border border-sky-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
               />
             </div>
 
@@ -1081,36 +1310,6 @@ export default function App() {
               />
             </div>
 
-            {/* 9. Whole-Flight Fixed Track Override (Optional) */}
-            <div className="col-span-2 sm:col-span-1 xl:col-span-1">
-              <label
-                htmlFor="input-global-track"
-                className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
-                title="Leave blank to auto-calculate track between each map waypoint, or enter a fixed track (0-359°) for the whole flight"
-              >
-                Fixed Track (°T)
-              </label>
-              <input
-                id="input-global-track"
-                type="number"
-                min={0}
-                max={359}
-                placeholder="Auto Map"
-                value={
-                  config.globalTrackOverrideDeg !== null
-                    ? config.globalTrackOverrideDeg
-                    : ''
-                }
-                onChange={(e) => {
-                  const val = e.target.value.trim();
-                  updateConfig({
-                    globalTrackOverrideDeg:
-                      val === '' ? null : Math.max(0, Math.min(359, Number(val))),
-                  });
-                }}
-                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-slate-50/90 border border-slate-200/90 rounded-xl text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
-              />
-            </div>
           </div>
 
           {/* Flight Summary KPI Telemetry Ribbon */}
@@ -1256,8 +1455,16 @@ export default function App() {
           <div id="wind-triangle" className="flex flex-col">
             <WaypointManager
               waypoints={waypoints}
+              legs={navLogSummary.legs}
               selectedAltitudeFt={config.selectedAltitudeFt}
               routeTrackMode={config.routeTrackMode || 'straight'}
+              globalTrackOverrideDeg={config.globalTrackOverrideDeg}
+              onChangeGlobalTrackOverride={(val) =>
+                updateConfig({ globalTrackOverrideDeg: val })
+              }
+              roundOffValues={config.roundOffValues}
+              savedRoutes={savedRoutes}
+              activeSavedRouteId={activeSavedRouteId}
               onChangeRouteTrackMode={handleChangeRouteTrackMode}
               onSetEndpointWaypoint={handleSetEndpointWaypoint}
               onAddWaypoint={(name, lat, lng, explicitFraction) =>
@@ -1266,19 +1473,39 @@ export default function App() {
               onGenerateEvenWaypoints={handleGenerateEvenWaypoints}
               onUpdateWaypoint={handleUpdateWaypoint}
               onUpdateWaypointCoord={handleUpdateWaypointCoord}
+              onAdjustWaypointLeg={handleAdjustWaypointLeg}
+              onResetWaypointLeg={handleResetWaypointLeg}
               onMoveWaypoint={handleMoveWaypoint}
               onRemoveWaypoint={handleRemoveWaypoint}
               onReverseRoute={handleReverseRoute}
               onClearAllWaypoints={handleClearFlightPlan}
-              onImportWaypoints={(imported) => {
+              onSaveCurrentRoute={handleSaveCurrentRoute}
+              onLoadSavedRoute={handleLoadSavedRoute}
+              onDeleteSavedRoute={handleDeleteSavedRoute}
+              onImportRoutePayload={(payload: ImportedRoutePayload) => {
+                const importedMode: RouteTrackMode =
+                  payload.routeTrackMode || config.routeTrackMode || 'straight';
+                const hasCustomLegs = payload.waypoints.some(
+                  (w) => w.customDistanceNm !== undefined || w.customTrackDeg !== undefined
+                );
                 const nextWpts =
-                  (config.routeTrackMode || 'straight') === 'straight'
-                    ? snapWaypointsToStraightLine(imported)
-                    : imported;
+                  importedMode === 'straight' && !hasCustomLegs
+                    ? snapWaypointsToStraightLine(payload.waypoints)
+                    : payload.waypoints;
+                setActiveSavedRouteId(null);
+                setActivePresetId('custom');
                 setWaypoints(nextWpts);
                 setOverrides({});
                 setSelectedLegIndex(0);
-                setConfig((prev) => ({ ...prev, alternate: null }));
+                setConfig((prev) => ({
+                  ...prev,
+                  routeTrackMode: importedMode,
+                  globalTrackOverrideDeg:
+                    payload.globalTrackOverrideDeg !== undefined
+                      ? payload.globalTrackOverrideDeg
+                      : prev.globalTrackOverrideDeg,
+                  alternate: null,
+                }));
                 fetchUpperAirWinds(
                   nextWpts,
                   config.selectedAltitudeFt,
@@ -1296,23 +1523,7 @@ export default function App() {
           </div>
         </section>
 
-        {/* Section 3: Alternate Aerodrome Search / Coordinates & Complete Fuel Breakdown */}
-        <section>
-          <AlternatePlanner
-            departureWaypoint={waypoints[0]}
-            destinationWaypoint={waypoints[waypoints.length - 1]}
-            alternate={config.alternate}
-            computedAlternate={navLogSummary.alternateLeg}
-            fuelPlan={navLogSummary.fuelPlan}
-            config={config}
-            showMagneticHeading={showMagneticHeading}
-            onSelectAlternate={handleSelectAlternate}
-            onUpdateAlternateFields={handleUpdateAlternateFields}
-            onUpdateConfig={updateConfig}
-          />
-        </section>
-
-        {/* Section 4: Paper-Faithful Flight NavLog Table (Estimated Pre-Flight Columns) */}
+        {/* Section 3: Paper-Faithful Flight NavLog Table (Estimated Pre-Flight Columns) */}
         <section id="navlog-sheet" className="space-y-3.5">
           <div className="aerolog-card bg-white border border-slate-200/85 rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3.5 no-print shadow-[0_1px_3px_rgba(15,23,42,0.03),0_10px_30px_-5px_rgba(15,23,42,0.04)]">
             <div>
@@ -1320,7 +1531,7 @@ export default function App() {
                 Flight Navigation Log Sheet (Pre-Flight Estimated Values)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Ready to copy onto your physical flight logbook. Click any Track, Leg Distance, or Wind cell to override values.
+                Ready to copy onto your physical flight logbook. Editing Track or Leg Distance automatically adjusts waypoints on the track and can be saved with your route.
               </p>
             </div>
 
@@ -1401,6 +1612,22 @@ export default function App() {
             onSelectLeg={setSelectedLegIndex}
             onUpdateLegOverride={handleUpdateLegOverride}
             onResetLegOverride={handleResetLegOverride}
+          />
+        </section>
+
+        {/* Section 4: Alternate Aerodrome Search / Coordinates & Complete Fuel Breakdown */}
+        <section>
+          <AlternatePlanner
+            departureWaypoint={waypoints[0]}
+            destinationWaypoint={waypoints[waypoints.length - 1]}
+            alternate={config.alternate}
+            computedAlternate={navLogSummary.alternateLeg}
+            fuelPlan={navLogSummary.fuelPlan}
+            config={config}
+            showMagneticHeading={showMagneticHeading}
+            onSelectAlternate={handleSelectAlternate}
+            onUpdateAlternateFields={handleUpdateAlternateFields}
+            onUpdateConfig={updateConfig}
           />
         </section>
       </main>

@@ -607,3 +607,203 @@ test('roundWindDirToTenDeg rounds all received and interpolated wind directions 
   const synopticNode = buildSynopticGridNode(17.3056, 76.9531, 5000, dt, 'ecmwf_ifs025');
   assert.equal(synopticNode.windDir % 10, 0);
 });
+
+test('adjustWaypointsForLegEdit repositions waypoints along straight-line and freeform tracks and preserves exact modified track/distance in NavLog', async () => {
+  const {
+    calculateDestinationPoint,
+    adjustWaypointsForLegEdit,
+    resetWaypointLegCustomization,
+    reverseWaypointsWithLegs,
+    snapWaypointsToStraightLine,
+  } = await import('./navlogMath');
+
+  // 1. Forward geodesic destination point check: 60 NM due North from (17.0, 76.0) ≈ (18.0, 76.0)
+  const northPt = calculateDestinationPoint(17.0, 76.0, 0, 60);
+  assert.ok(Math.abs(northPt.lat - 18.0) < 0.01);
+  assert.ok(Math.abs(northPt.lng - 76.0) < 0.01);
+
+  // 2. Straight-line mode: VOGB -> WPT1 -> WPT2 -> VASL (~61.4 NM total)
+  const baseRoute: Waypoint[] = snapWaypointsToStraightLine([
+    { id: 'dep', name: 'VOGB', lat: 17.3056, lng: 76.9531, windDir: 50, windSpd: 12 },
+    { id: 'w1', name: 'SAVALGI', lat: 17.413, lng: 76.613, windDir: 50, windSpd: 12 },
+    { id: 'w2', name: 'ALAND', lat: 17.52, lng: 76.274, windDir: 60, windSpd: 11 },
+    { id: 'dest', name: 'VASL', lat: 17.628, lng: 75.9348, windDir: 70, windSpd: 10 },
+  ]);
+
+  // Edit Leg 1 (VOGB -> SAVALGI) to 18.0 NM and aircraft track 292°
+  const edited1 = adjustWaypointsForLegEdit(
+    baseRoute,
+    0,
+    { distanceNm: 18.0, trackDeg: 292 },
+    'straight'
+  );
+  assert.equal(edited1[1].customDistanceNm, 18.0);
+  assert.equal(edited1[1].customTrackDeg, 292);
+  // SAVALGI must have slid along the straight line to ~18.0 NM from VOGB
+  const movedDistNm = calculateDistanceNm(
+    edited1[0].lat,
+    edited1[0].lng,
+    edited1[1].lat,
+    edited1[1].lng
+  );
+  assert.ok(
+    Math.abs(movedDistNm - 18.0) < 0.25,
+    `Expected SAVALGI at ~18.0 NM from VOGB, got ${movedDistNm}`
+  );
+  // DEP and DEST aerodromes remain anchored
+  assert.equal(edited1[0].lat, 17.3056);
+  assert.equal(edited1[3].lat, 17.628);
+
+  // NavLog computes with exact modified distance (18.0 NM) and aircraft track (292°)
+  const config: FlightConfig = {
+    cruiseTasKt: 85,
+    fuelFlowLph: 15,
+    initialFuelLiters: 120,
+    taxiFuelLiters: 5,
+    contingencyPercent: 5,
+    holdingFuelLiters: 11.3,
+    reserveFuelLiters: 11.3,
+    departureDate: '2026-11-21',
+    airborneTime: '09:00',
+    selectedAltitudeFt: 5000,
+    magneticVariationDeg: -1,
+    globalTrackOverrideDeg: null,
+    alternate: null,
+    routeTrackMode: 'straight',
+  };
+  const nav = computeNavLog(edited1, config);
+  assert.equal(nav.legs[0].trackDeg, 292);
+  assert.equal(nav.legs[0].legDistNm, 18.0);
+
+  // 3. Proportional adjustment when user enters custom distances exceeding exact geo span (e.g. 25 + 25 + 25 = 75 NM on 61.4 NM line)
+  let customAll = adjustWaypointsForLegEdit(baseRoute, 0, { distanceNm: 25 }, 'straight');
+  customAll = adjustWaypointsForLegEdit(customAll, 1, { distanceNm: 25 }, 'straight');
+  customAll = adjustWaypointsForLegEdit(customAll, 2, { distanceNm: 25 }, 'straight');
+  assert.ok(
+    customAll[1].lineFraction! > 0.3 && customAll[1].lineFraction! < 0.36,
+    `Expected WPT1 near 33% of track, got ${customAll[1].lineFraction}`
+  );
+  assert.ok(
+    customAll[2].lineFraction! > 0.63 && customAll[2].lineFraction! < 0.7,
+    `Expected WPT2 near 67% of track, got ${customAll[2].lineFraction}`
+  );
+  const navAll = computeNavLog(customAll, config);
+  assert.equal(navAll.totalDistanceNm, 75.0);
+
+  // 4. Freeform mode: editing track & distance moves intermediate waypoint via forward geodesic
+  const freeEdited = adjustWaypointsForLegEdit(
+    baseRoute,
+    0,
+    { trackDeg: 0, distanceNm: 30 },
+    'freeform'
+  );
+  const freeDist = calculateDistanceNm(
+    freeEdited[0].lat,
+    freeEdited[0].lng,
+    freeEdited[1].lat,
+    freeEdited[1].lng
+  );
+  const freeTrack = calculateTrueTrackDeg(
+    freeEdited[0].lat,
+    freeEdited[0].lng,
+    freeEdited[1].lat,
+    freeEdited[1].lng
+  );
+  assert.ok(Math.abs(freeDist - 30) < 0.2);
+  assert.equal(freeTrack, 0);
+
+  // 5. Reversing route transfers custom distance and flips track by 180° (292° -> 112°)
+  const reversed = reverseWaypointsWithLegs(edited1);
+  assert.equal(reversed[0].name, 'VASL');
+  assert.equal(reversed[reversed.length - 1].name, 'VOGB');
+  // Original leg 0 (VOGB -> SAVALGI) is now the last leg (SAVALGI -> VOGB) arriving at reversed[3]
+  assert.equal(reversed[3].customDistanceNm, 18.0);
+  assert.equal(reversed[3].customTrackDeg, 112);
+
+  // 6. Resetting leg customization removes customDistanceNm & customTrackDeg
+  const reset = resetWaypointLegCustomization(edited1, 'w1');
+  assert.equal(reset[1].customDistanceNm, undefined);
+  assert.equal(reset[1].customTrackDeg, undefined);
+});
+
+test('savedRoutes persists routes with modified track/distance and KML export/import round-trips ExtendedData', async () => {
+  const {
+    saveRouteToList,
+    deleteRouteFromList,
+    persistSavedRoutes,
+    loadSavedRoutes,
+    countModifiedWaypointLegs,
+    parseImportedRouteText,
+  } = await import('./savedRoutes');
+  const { exportWaypointsToKml } = await import('./presetRoutes');
+
+  const waypoints: Waypoint[] = [
+    { id: 'dep', name: 'VOGB', lat: 17.3056, lng: 76.9531, windDir: 50, windSpd: 12 },
+    {
+      id: 'w1',
+      name: 'SAVALGI',
+      lat: 17.39,
+      lng: 76.68,
+      customTrackDeg: 291,
+      customDistanceNm: 16.5,
+      windDir: 60,
+      windSpd: 11,
+    },
+    {
+      id: 'dest',
+      name: 'VASL',
+      lat: 17.628,
+      lng: 75.9348,
+      customTrackDeg: 291,
+      customDistanceNm: 45.5,
+      windDir: 70,
+      windSpd: 10,
+    },
+  ];
+
+  assert.equal(countModifiedWaypointLegs(waypoints), 2);
+
+  // Mock in-memory Storage for deterministic persistence testing
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      store.set(k, v);
+    },
+  };
+
+  const { routes, savedRoute } = saveRouteToList([], {
+    name: 'VOGB to VASL Aircraft Track',
+    routeTrackMode: 'straight',
+    globalTrackOverrideDeg: null,
+    waypoints,
+    alternate: null,
+    alternateFrom: 'DEST',
+  });
+  persistSavedRoutes(routes, mockStorage);
+
+  const loaded = loadSavedRoutes(mockStorage);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].name, 'VOGB to VASL Aircraft Track');
+  assert.equal(loaded[0].waypoints[1].customTrackDeg, 291);
+  assert.equal(loaded[0].waypoints[1].customDistanceNm, 16.5);
+  assert.equal(loaded[0].waypoints[2].customDistanceNm, 45.5);
+
+  // KML export + import round-trip preserves modified track & distance
+  const kml = exportWaypointsToKml(waypoints, 'VOGB to VASL Aircraft Track', {
+    routeTrackMode: 'straight',
+    globalTrackOverrideDeg: null,
+  });
+  const imported = parseImportedRouteText(kml);
+  assert.equal(imported.waypoints.length, 3);
+  assert.equal(imported.routeTrackMode, 'straight');
+  assert.equal(imported.waypoints[1].customTrackDeg, 291);
+  assert.equal(imported.waypoints[1].customDistanceNm, 16.5);
+  assert.equal(imported.waypoints[2].customTrackDeg, 291);
+  assert.equal(imported.waypoints[2].customDistanceNm, 45.5);
+
+  // Deleting saved route removes it cleanly
+  const afterDelete = deleteRouteFromList(loaded, savedRoute.id);
+  assert.equal(afterDelete.length, 0);
+});
+

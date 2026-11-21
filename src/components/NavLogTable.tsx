@@ -146,9 +146,13 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
             {legs.map((leg, idx) => {
               const isSelected = selectedLegIndex === idx;
               const ov = overrides[leg.legId] || {};
+              const hasCustomTrack =
+                ov.trackDeg !== undefined || leg.toWaypoint.customTrackDeg !== undefined;
+              const hasCustomDist =
+                ov.distanceNm !== undefined || leg.toWaypoint.customDistanceNm !== undefined;
               const hasOverride =
-                ov.trackDeg !== undefined ||
-                ov.distanceNm !== undefined ||
+                hasCustomTrack ||
+                hasCustomDist ||
                 ov.windDir !== undefined ||
                 ov.windSpd !== undefined;
 
@@ -183,7 +187,7 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
                             e.stopPropagation();
                             onResetLegOverride(leg.legId);
                           }}
-                          title="Reset manual leg overrides to map/wind values"
+                          title="Reset modified track/distance/wind overrides to map/wind values"
                           aria-label={`Reset overrides for leg ${leg.fromName} to ${leg.toName}`}
                           className="text-amber-700 hover:text-amber-900 p-0.5 rounded no-print"
                         >
@@ -200,8 +204,12 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
                     </span>
                   </td>
 
-                  {/* Distance: Track (editable override) */}
-                  <td className="border-r border-slate-200 px-1.5 py-1.5 text-center whitespace-nowrap">
+                  {/* Distance: Track (editable; saves modified aircraft track on waypoint) */}
+                  <td
+                    className={`border-r border-slate-200 px-1.5 py-1.5 text-center whitespace-nowrap ${
+                      hasCustomTrack ? 'bg-amber-50/70' : ''
+                    }`}
+                  >
                     <div className="inline-flex items-center justify-center">
                       <EditableNumberInput
                         min={0}
@@ -212,14 +220,20 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
                         onChange={(val) =>
                           onUpdateLegOverride(leg.legId, { trackDeg: val })
                         }
-                        className="w-10 text-right font-mono font-semibold text-slate-900 bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-sky-500 rounded-md px-0.5 py-0.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        className={`w-10 text-right font-mono font-semibold bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-sky-500 rounded-md px-0.5 py-0.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                          hasCustomTrack ? 'text-amber-900' : 'text-slate-900'
+                        }`}
                       />
                       <span className="text-[11px] text-slate-500">°</span>
                     </div>
                   </td>
 
-                  {/* Distance: Leg NM (editable override) */}
-                  <td className="border-r border-slate-200 px-1.5 py-1.5 text-center">
+                  {/* Distance: Leg NM (editable; adjusts waypoint along track) */}
+                  <td
+                    className={`border-r border-slate-200 px-1.5 py-1.5 text-center ${
+                      hasCustomDist ? 'bg-amber-50/70' : ''
+                    }`}
+                  >
                     <EditableNumberInput
                       min={0}
                       step={roundOff ? '1' : '0.1'}
@@ -229,7 +243,9 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({
                       onChange={(val) =>
                         onUpdateLegOverride(leg.legId, { distanceNm: val })
                       }
-                      className="w-14 text-right font-mono font-semibold text-slate-900 bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-sky-500 rounded-md px-1 py-0.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      className={`w-14 text-right font-mono font-semibold bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-sky-500 rounded-md px-1 py-0.5 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                        hasCustomDist ? 'text-amber-900' : 'text-slate-900'
+                      }`}
                     />
                   </td>
 

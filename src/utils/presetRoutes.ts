@@ -214,27 +214,97 @@ export const PRESET_ROUTES: PresetFlightRoute[] = [
   },
 ];
 
-export function exportWaypointsToKml(waypoints: Waypoint[], routeTitle: string): string {
+export function exportWaypointsToKml(
+  waypoints: Waypoint[],
+  routeTitle: string,
+  options?: {
+    routeTrackMode?: 'straight' | 'freeform';
+    globalTrackOverrideDeg?: number | null;
+  }
+): string {
+  const escapeXml = (str: string) =>
+    str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
   const placemarks = waypoints
-    .map(
-      (wp) => `    <Placemark>
-      <name>${wp.name}</name>
-      <description>Wind: ${wp.windDir ?? 0}° @ ${wp.windSpd ?? 0} kt (${wp.windSource || 'N/A'})</description>
+    .map((wp) => {
+      const extEntries: string[] = [];
+      if (wp.customTrackDeg !== undefined) {
+        extEntries.push(
+          `        <Data name="customTrackDeg"><value>${wp.customTrackDeg}</value></Data>`
+        );
+      }
+      if (wp.customDistanceNm !== undefined) {
+        extEntries.push(
+          `        <Data name="customDistanceNm"><value>${wp.customDistanceNm}</value></Data>`
+        );
+      }
+      if (wp.windDir !== undefined) {
+        extEntries.push(`        <Data name="windDir"><value>${wp.windDir}</value></Data>`);
+      }
+      if (wp.windSpd !== undefined) {
+        extEntries.push(`        <Data name="windSpd"><value>${wp.windSpd}</value></Data>`);
+      }
+      if (wp.windSource) {
+        extEntries.push(
+          `        <Data name="windSource"><value>${escapeXml(wp.windSource)}</value></Data>`
+        );
+      }
+
+      const extBlock =
+        extEntries.length > 0
+          ? `\n      <ExtendedData>\n${extEntries.join('\n')}\n      </ExtendedData>`
+          : '';
+
+      const customDescParts: string[] = [
+        `Wind: ${wp.windDir ?? 0}° @ ${wp.windSpd ?? 0} kt (${wp.windSource || 'N/A'})`,
+      ];
+      if (wp.customTrackDeg !== undefined) {
+        customDescParts.push(`Modified Track: ${String(wp.customTrackDeg).padStart(3, '0')}°T`);
+      }
+      if (wp.customDistanceNm !== undefined) {
+        customDescParts.push(`Modified Leg Dist: ${wp.customDistanceNm} NM`);
+      }
+
+      return `    <Placemark>
+      <name>${escapeXml(wp.name)}</name>
+      <description>${escapeXml(customDescParts.join(' · '))}</description>${extBlock}
       <Point>
         <coordinates>${wp.lng},${wp.lat},${Math.round((wp.elevationFt || 0) * 0.3048)}</coordinates>
       </Point>
-    </Placemark>`
-    )
+    </Placemark>`;
+    })
     .join('\n');
 
   const lineCoords = waypoints
     .map((wp) => `${wp.lng},${wp.lat},${Math.round((wp.elevationFt || 0) * 0.3048)}`)
     .join(' ');
 
+  const docExtEntries: string[] = [];
+  if (options?.routeTrackMode) {
+    docExtEntries.push(
+      `      <Data name="routeTrackMode"><value>${options.routeTrackMode}</value></Data>`
+    );
+  }
+  if (
+    options?.globalTrackOverrideDeg !== undefined &&
+    options?.globalTrackOverrideDeg !== null
+  ) {
+    docExtEntries.push(
+      `      <Data name="globalTrackOverrideDeg"><value>${options.globalTrackOverrideDeg}</value></Data>`
+    );
+  }
+  const docExtBlock =
+    docExtEntries.length > 0
+      ? `\n    <ExtendedData>\n${docExtEntries.join('\n')}\n    </ExtendedData>`
+      : '';
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
-    <name>${routeTitle}</name>
+    <name>${escapeXml(routeTitle)}</name>${docExtBlock}
     <Placemark>
       <name>Flight Route Path</name>
       <LineString>
@@ -246,4 +316,5 @@ ${placemarks}
   </Document>
 </kml>`;
 }
+
 

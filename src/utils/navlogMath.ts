@@ -8,6 +8,8 @@ export interface Waypoint {
   freeformLat?: number; // Original freeform latitude before snapping to straight line
   freeformLng?: number; // Original freeform longitude before snapping to straight line
   lineFraction?: number; // Fractional position t in [0, 1] along DEP -> DEST straight line
+  customTrackDeg?: number; // User-modified aircraft track (°T) for the leg arriving at this waypoint
+  customDistanceNm?: number; // User-modified leg distance (NM) for the leg arriving at this waypoint
   elevationFt?: number;
   windDir?: number; // Degrees True (FROM which wind blows, 0-360)
   windSpd?: number; // Knots
@@ -297,6 +299,52 @@ export function calculateTrueTrackDeg(
     Math.sin(rLat1) * Math.cos(rLat2) * Math.cos(dLng);
   const brng = Math.atan2(y, x) * RAD_TO_DEG;
   return normalizeDegrees(brng);
+}
+
+/**
+ * Forward spherical geodesic: given a starting point `(latDeg, lngDeg)`, initial True bearing
+ * `bearingDeg`, and distance `distanceNm` in Nautical Miles, return the destination coordinate
+ * rounded to 4 decimal places.
+ */
+export function calculateDestinationPoint(
+  latDeg: number,
+  lngDeg: number,
+  bearingDeg: number,
+  distanceNm: number
+): { lat: number; lng: number } {
+  const safeDist = Math.max(0, isFinite(distanceNm) ? distanceNm : 0);
+  if (safeDist < 1e-6) {
+    return {
+      lat: Math.round(latDeg * 10000) / 10000,
+      lng: Math.round(lngDeg * 10000) / 10000,
+    };
+  }
+
+  const angularDist = safeDist / EARTH_RADIUS_NM;
+  const brng = normalizeDegrees(bearingDeg) * DEG_TO_RAD;
+  const lat1 = latDeg * DEG_TO_RAD;
+  const lng1 = lngDeg * DEG_TO_RAD;
+
+  const sinLat1 = Math.sin(lat1);
+  const cosLat1 = Math.cos(lat1);
+  const sinD = Math.sin(angularDist);
+  const cosD = Math.cos(angularDist);
+
+  const sinLat2 = Math.max(-1, Math.min(1, sinLat1 * cosD + cosLat1 * sinD * Math.cos(brng)));
+  const lat2 = Math.asin(sinLat2);
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(brng) * sinD * cosLat1,
+      cosD - sinLat1 * sinLat2
+    );
+
+  // Normalize longitude to [-180, 180]
+  const rawLngDeg = ((lng2 * RAD_TO_DEG + 540) % 360) - 180;
+  return {
+    lat: Math.round(lat2 * RAD_TO_DEG * 10000) / 10000,
+    lng: Math.round(rawLngDeg * 10000) / 10000,
+  };
 }
 
 export interface StraightLineProjection {
@@ -639,6 +687,220 @@ export function generateWaypointsAlongStraightLine(
   return [cleanDep, ...generated, cleanDest];
 }
 
+/**
+ * Adjust waypoints along the track when the user modifies a leg's distance (NM) and/or
+ * aircraft track (°T).
+ *
+ * `legIndex` is 0-based (leg `0` arrives at `waypoints[1]`, leg `k` arrives at `waypoints[k + 1]`).
+ * - Stores exact `customDistanceNm` and/or `customTrackDeg` on the arriving waypoint so the
+ *   NavLog always honors the pilot's aircraft/chart figures even when they differ slightly from
+ *   exact geodesic geometry.
+ * - In `'straight'` mode, slides intermediate waypoints along the `DEP -> DEST` straight track
+ *   according to the entered distances (exact NM along the track when cumulative distance fits
+ *   inside the DEP->DEST span, or proportional along the track when total custom distances exceed
+ *   or differ from the DEP->DEST geodesic span) while keeping `DEP` and `DEST` aerodromes anchored.
+ * - In `'freeform'` mode, repositions intermediate waypoints using the forward geodesic from the
+ *   preceding waypoint along the active track and distance.
+ */
+export function adjustWaypointsForLegEdit(
+  waypoints: Waypoint[],
+  legIndex: number,
+  edit: { distanceNm?: number; trackDeg?: number },
+  mode: RouteTrackMode = 'straight'
+): Waypoint[] {
+  const targetIdx = legIndex + 1;
+  if (waypoints.length < 2 || targetIdx < 1 || targetIdx >= waypoints.length) {
+    return waypoints;
+  }
+
+  const next = waypoints.map((wp) => ({ ...wp }));
+  const targetWp = next[targetIdx];
+
+  if (edit.distanceNm !== undefined && isFinite(edit.distanceNm) && edit.distanceNm >= 0) {
+    targetWp.customDistanceNm = Math.round(Math.max(0, edit.distanceNm) * 10) / 10;
+  }
+  if (edit.trackDeg !== undefined && isFinite(edit.trackDeg)) {
+    targetWp.customTrackDeg = normalizeDegrees(edit.trackDeg);
+  }
+
+  const n = next.length;
+
+  // Straight-line track mode: adjust intermediate waypoints along DEP -> DEST line per distances entered
+  if (mode === 'straight') {
+    if (n <= 2) {
+      return next;
+    }
+    const dep = next[0];
+    const dest = next[n - 1];
+    const geoTotalNm = calculateDistanceNm(dep.lat, dep.lng, dest.lat, dest.lng);
+    if (geoTotalNm < 0.05) {
+      return next;
+    }
+
+    // Only reposition coordinates if distance was edited (or if any waypoint has customDistanceNm and distance was edited)
+    if (edit.distanceNm === undefined) {
+      return next;
+    }
+
+    // Build desired cumulative distances from DEP for waypoints 0..n-1
+    const cumDist: number[] = [0];
+    for (let k = 1; k < n; k++) {
+      const wpBefore = waypoints[k];
+      const prevBefore = waypoints[k - 1];
+      const origLegGeo = calculateDistanceNm(
+        prevBefore.lat,
+        prevBefore.lng,
+        wpBefore.lat,
+        wpBefore.lng
+      );
+      const existingDistFromDep = calculateDistanceNm(dep.lat, dep.lng, wpBefore.lat, wpBefore.lng);
+      const wpNext = next[k];
+
+      if (k === n - 1) {
+        // Final leg arriving at DEST
+        const lastLegDist =
+          wpNext.customDistanceNm !== undefined
+            ? wpNext.customDistanceNm
+            : Math.max(0.2, geoTotalNm - cumDist[k - 1]);
+        cumDist.push(cumDist[k - 1] + lastLegDist);
+      } else if (k === targetIdx || wpNext.customDistanceNm !== undefined) {
+        const legDist =
+          wpNext.customDistanceNm !== undefined ? wpNext.customDistanceNm : origLegGeo;
+        cumDist.push(cumDist[k - 1] + Math.max(0.1, legDist));
+      } else if (k < targetIdx) {
+        // Keep upstream unmodified waypoints at their existing distance from DEP
+        cumDist.push(Math.max(cumDist[k - 1] + 0.1, existingDistFromDep));
+      } else {
+        // Downstream unmodified intermediate waypoint: stay at its existing spot on the line
+        // unless the edited upstream leg pushed past it
+        const minAhead = cumDist[k - 1] + Math.max(0.2, origLegGeo * 0.25);
+        cumDist.push(Math.max(minAhead, existingDistFromDep));
+      }
+    }
+
+    const totalDesiredNm = cumDist[n - 1];
+    const lastIntermediateCum = cumDist[n - 2];
+    const hasCustomDestDist = dest.customDistanceNm !== undefined;
+
+    // Use exact NM placement along the DEP->DEST line when intermediate cumulative distances
+    // fit cleanly inside the line and DEST distance wasn't overridden; otherwise scale proportionally
+    // across totalDesiredNm so waypoints stay cleanly ordered on the DEP->DEST track.
+    const useExactGeoScale = !hasCustomDestDist && lastIntermediateCum < geoTotalNm * 0.985;
+    const denominatorNm = useExactGeoScale
+      ? geoTotalNm
+      : Math.max(0.5, totalDesiredNm);
+
+    // Compute strictly increasing fractions t in [0.02, 0.98]
+    const fractions: number[] = [];
+    for (let k = 1; k < n - 1; k++) {
+      let t = cumDist[k] / denominatorNm;
+      t = Math.max(0.02, Math.min(0.98, t));
+      if (fractions.length > 0 && t <= fractions[fractions.length - 1] + 0.01) {
+        t = Math.min(0.98, fractions[fractions.length - 1] + 0.015);
+      }
+      fractions.push(t);
+    }
+
+    // Back-pass clamp in case multiple waypoints bunched near 0.98
+    for (let i = fractions.length - 2; i >= 0; i--) {
+      if (fractions[i] >= fractions[i + 1] - 0.01) {
+        fractions[i] = Math.max(0.02, fractions[i + 1] - 0.015);
+      }
+    }
+
+    for (let k = 1; k < n - 1; k++) {
+      const interp = interpolatePointAlongLine(dep, dest, fractions[k - 1], 0.02, 0.98);
+      next[k] = {
+        ...next[k],
+        lat: interp.lat,
+        lng: interp.lng,
+        freeformLat: next[k].freeformLat ?? interp.lat,
+        freeformLng: next[k].freeformLng ?? interp.lng,
+        lineFraction: interp.t,
+      };
+    }
+
+    return next;
+  }
+
+  // Freeform mode: reposition intermediate waypoint using forward geodesic from preceding waypoint
+  if (targetIdx < n - 1) {
+    const prevWp = next[targetIdx - 1];
+    const activeTrack =
+      targetWp.customTrackDeg !== undefined
+        ? targetWp.customTrackDeg
+        : calculateTrueTrackDeg(prevWp.lat, prevWp.lng, targetWp.lat, targetWp.lng);
+    const activeDist =
+      targetWp.customDistanceNm !== undefined
+        ? targetWp.customDistanceNm
+        : calculateDistanceNm(prevWp.lat, prevWp.lng, targetWp.lat, targetWp.lng);
+
+    const moved = calculateDestinationPoint(prevWp.lat, prevWp.lng, activeTrack, activeDist);
+    next[targetIdx] = {
+      ...targetWp,
+      lat: moved.lat,
+      lng: moved.lng,
+      freeformLat: moved.lat,
+      freeformLng: moved.lng,
+    };
+  }
+
+  return next;
+}
+
+/**
+ * Clear custom modified distance/track values on a specific waypoint (leg arriving at `waypointId`).
+ */
+export function resetWaypointLegCustomization(
+  waypoints: Waypoint[],
+  waypointId: string
+): Waypoint[] {
+  return waypoints.map((wp) => {
+    if (wp.id !== waypointId) return wp;
+    const copy = { ...wp };
+    delete copy.customTrackDeg;
+    delete copy.customDistanceNm;
+    return copy;
+  });
+}
+
+/**
+ * Reverse waypoints for a return flight (DEP <-> DEST), transferring any per-leg custom
+ * distances and flipping custom tracks by 180° (reciprocal track) to the corresponding
+ * return legs.
+ */
+export function reverseWaypointsWithLegs(waypoints: Waypoint[]): Waypoint[] {
+  if (waypoints.length <= 1) return [...waypoints];
+  const reversed = [...waypoints].reverse().map((wp) => {
+    const copy = { ...wp };
+    delete copy.customDistanceNm;
+    delete copy.customTrackDeg;
+    if (copy.lineFraction !== undefined) {
+      copy.lineFraction = Math.round((1 - copy.lineFraction) * 10000) / 10000;
+    }
+    return copy;
+  });
+
+  // Original leg i went from waypoints[i] -> waypoints[i+1] with custom values on waypoints[i+1].
+  // In reversed route, that same segment goes from reversed[n-2-i] -> reversed[n-1-i],
+  // so its custom values move to reversed[n-1-i] with reciprocal track (+180°).
+  const n = waypoints.length;
+  for (let i = 0; i < n - 1; i++) {
+    const origArriving = waypoints[i + 1];
+    const revArrivingIdx = n - 1 - i;
+    if (origArriving.customDistanceNm !== undefined) {
+      reversed[revArrivingIdx].customDistanceNm = origArriving.customDistanceNm;
+    }
+    if (origArriving.customTrackDeg !== undefined) {
+      reversed[revArrivingIdx].customTrackDeg = normalizeDegrees(
+        origArriving.customTrackDeg + 180
+      );
+    }
+  }
+
+  return reversed;
+}
+
 export interface WindTriangleResult {
   wcaDeg: number; // Wind Correction Angle in degrees (-left, +right)
   trueHeadingDeg: number; // True Heading (0-359)
@@ -960,6 +1222,10 @@ export function computeNavLog(
     const dist =
       ov?.distanceNm !== undefined && !isNaN(ov.distanceNm) && ov.distanceNm >= 0
         ? roundCalc(ov.distanceNm, roundOff)
+        : toWp.customDistanceNm !== undefined &&
+          !isNaN(toWp.customDistanceNm) &&
+          toWp.customDistanceNm >= 0
+        ? roundCalc(toWp.customDistanceNm, roundOff)
         : roundCalc(geoDist, roundOff);
     rawLegDistances.push(dist);
   }
@@ -1001,6 +1267,8 @@ export function computeNavLog(
     const trackDeg =
       ov.trackDeg !== undefined && !isNaN(ov.trackDeg)
         ? normalizeDegrees(ov.trackDeg)
+        : toWp.customTrackDeg !== undefined && !isNaN(toWp.customTrackDeg)
+        ? normalizeDegrees(toWp.customTrackDeg)
         : config.globalTrackOverrideDeg !== null &&
           !isNaN(config.globalTrackOverrideDeg)
         ? normalizeDegrees(config.globalTrackOverrideDeg)
@@ -1176,6 +1444,22 @@ export function parseKmlWaypoints(kmlText: string): Waypoint[] {
           .replace(/^\d+\.\s*/, '') // Strip leading "1. ", "2. " numbering if present
       : `WPT ${i + 1}`;
 
+    // Parse optional <ExtendedData> tags for saved customTrackDeg, customDistanceNm, and winds
+    const readExtData = (key: string): string | null => {
+      const regex = new RegExp(
+        `<Data\\s+name=["']${key}["'][^>]*>\\s*<value>([\\s\\S]*?)<\\/value>\\s*<\\/Data>`,
+        'i'
+      );
+      const m = regex.exec(pm);
+      return m ? m[1].trim() : null;
+    };
+
+    const parsedCustomTrack = readExtData('customTrackDeg');
+    const parsedCustomDist = readExtData('customDistanceNm');
+    const parsedWindDir = readExtData('windDir');
+    const parsedWindSpd = readExtData('windSpd');
+    const parsedWindSource = readExtData('windSource');
+
     // If it's a <Point> placemark, extract coordinates specifically from <Point>
     const pointBlockMatch = /<Point[\s\S]*?<\/Point>/i.exec(pm);
     const coordSource = pointBlockMatch ? pointBlockMatch[0] : pm;
@@ -1203,7 +1487,20 @@ export function parseKmlWaypoints(kmlText: string): Waypoint[] {
             continue;
           }
 
-          waypoints.push({
+          const customTrackNum =
+            parsedCustomTrack !== null && parsedCustomTrack !== ''
+              ? Number(parsedCustomTrack)
+              : NaN;
+          const customDistNum =
+            parsedCustomDist !== null && parsedCustomDist !== ''
+              ? Number(parsedCustomDist)
+              : NaN;
+          const windDirNum =
+            parsedWindDir !== null && parsedWindDir !== '' ? Number(parsedWindDir) : NaN;
+          const windSpdNum =
+            parsedWindSpd !== null && parsedWindSpd !== '' ? Number(parsedWindSpd) : NaN;
+
+          const wp: Waypoint = {
             id: `kml-${Date.now()}-${i}-${j}`,
             name:
               coordTuples.length === 1
@@ -1212,10 +1509,18 @@ export function parseKmlWaypoints(kmlText: string): Waypoint[] {
             lat,
             lng,
             elevationFt: Math.round(altMeters * 3.28084),
-            windDir: 270,
-            windSpd: 12,
-            windSource: 'KML Import',
-          });
+            windDir: !isNaN(windDirNum) ? normalizeDegrees(windDirNum) : 270,
+            windSpd: !isNaN(windSpdNum) ? Math.max(0, Math.round(windSpdNum)) : 12,
+            windSource: parsedWindSource || 'KML Import',
+          };
+          if (!isNaN(customTrackNum)) {
+            wp.customTrackDeg = normalizeDegrees(customTrackNum);
+          }
+          if (!isNaN(customDistNum) && customDistNum >= 0) {
+            wp.customDistanceNm = Math.round(customDistNum * 10) / 10;
+          }
+
+          waypoints.push(wp);
         }
       }
     }
