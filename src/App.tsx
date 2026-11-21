@@ -10,7 +10,6 @@ import {
   Fuel,
   Clock,
   Navigation,
-  Calendar,
   Trash2,
   Hash,
   Moon,
@@ -19,6 +18,8 @@ import {
 import {
   ALTITUDE_LEVELS,
   AlternateAerodrome,
+  DistanceWaypointInputMode,
+  DistanceWaypointSpec,
   FlightConfig,
   LegOverride,
   RouteTrackMode,
@@ -26,12 +27,14 @@ import {
   Waypoint,
   WindModelId,
   adjustWaypointsForLegEdit,
+  buildWaypointsFromDistances,
   computeNavLog,
   formatCalc,
   generateWaypointsAlongStraightLine,
   getClosestAltitudeLevel,
   getCurrentIstDateTime,
   insertEnRouteWaypoint,
+  insertWaypointsByDistance,
   resetWaypointLegCustomization,
   restoreFreeformWaypoints,
   reverseWaypointsWithLegs,
@@ -635,6 +638,45 @@ export default function App() {
     ]
   );
 
+  const handleApplyWaypointsByDistance = useCallback(
+    (
+      specs: DistanceWaypointSpec[],
+      inputMode: DistanceWaypointInputMode,
+      applyMode: 'replace' | 'insert'
+    ) => {
+      if (waypoints.length < 2) return;
+      const dep = waypoints[0];
+      const dest = waypoints[waypoints.length - 1];
+      const nextWaypoints =
+        applyMode === 'replace'
+          ? buildWaypointsFromDistances(dep, dest, specs, inputMode)
+          : insertWaypointsByDistance(waypoints, specs, inputMode);
+
+      updateConfig({ routeTrackMode: 'straight' });
+      setWaypoints(nextWaypoints);
+      setOverrides({});
+      setSelectedLegIndex(0);
+      fetchUpperAirWinds(
+        nextWaypoints,
+        config.selectedAltitudeFt,
+        config.departureDate,
+        config.airborneTime,
+        config.alternate,
+        config.windModel || 'ecmwf_ifs025'
+      );
+    },
+    [
+      waypoints,
+      config.selectedAltitudeFt,
+      config.departureDate,
+      config.airborneTime,
+      config.alternate,
+      config.windModel,
+      updateConfig,
+      fetchUpperAirWinds,
+    ]
+  );
+
   const handleUpdateWaypointCoord = useCallback(
     (id: string, lat: number, lng: number) => {
       const mode: RouteTrackMode = config.routeTrackMode || 'straight';
@@ -1079,7 +1121,7 @@ export default function App() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Set Estimated Departure Date & Time (IST), Cruise Altitude, and Free Upper-Air Weather Model (ECMWF IFS, NOAA GFS, or DWD ICON) to compute leg winds, headings, ground speeds, and fuel.
+                Set Cruise Altitude, Free Upper-Air Weather Model (ECMWF IFS, NOAA GFS, or DWD ICON), and Aircraft Performance to compute leg winds, headings, ground speeds, and fuel.
               </p>
             </div>
 
@@ -1149,46 +1191,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Primary Flight Parameters Grid: Responsive 2-col on Phone, 4x2 on iPad/Tablet, 12-col on Desktop */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-12 gap-2.5 sm:gap-3 items-end">
-            {/* 1. Estimated Departure Date (IST) */}
-            <div className="col-span-1 sm:col-span-1 xl:col-span-2">
-              <label
-                htmlFor="input-departure-date"
-                className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 truncate"
-              >
-                <Calendar className="w-3 h-3 text-sky-600 shrink-0" />
-                <span className="truncate">Est. Dep Date (IST)</span>
-              </label>
-              <input
-                id="input-departure-date"
-                type="date"
-                value={config.departureDate}
-                onChange={(e) => handleDepartureDateChange(e.target.value)}
-                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-sky-50/60 border border-sky-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
-              />
-            </div>
-
-            {/* 2. Estimated Departure Time (IST) */}
-            <div className="col-span-1 sm:col-span-1 xl:col-span-2">
-              <label
-                htmlFor="input-airborne-time"
-                className="block text-[11px] font-semibold text-sky-900 mb-1.5 flex items-center gap-1 whitespace-nowrap"
-              >
-                <Clock className="w-3 h-3 text-sky-600 shrink-0" />
-                <span>Dep Time (IST)</span>
-              </label>
-              <input
-                id="input-airborne-time"
-                type="time"
-                value={config.airborneTime}
-                onChange={(e) => handleDepartureTimeChange(e.target.value)}
-                className="w-full px-2.5 py-2 text-xs font-mono font-bold bg-sky-50/60 border border-sky-200/90 rounded-xl text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
-              />
-            </div>
-
-            {/* 3. Cruising Altitude (Pressure Level) */}
-            <div className="col-span-2 sm:col-span-1 xl:col-span-2">
+          {/* Primary Flight Parameters Grid: Responsive 2-col on Phone, 4-col on iPad/Tablet, 10-col on Desktop */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-10 gap-2.5 sm:gap-3 items-end">
+            {/* 1. Cruising Altitude (Pressure Level) */}
+            <div className="col-span-2 sm:col-span-2 xl:col-span-3">
               <label
                 htmlFor="select-altitude-ft"
                 className="block text-[11px] font-semibold text-slate-600 mb-1.5 truncate"
@@ -1209,8 +1215,8 @@ export default function App() {
               </select>
             </div>
 
-            {/* 4. Free Upper-Air Wind Model Selector (Open-Meteo ECMWF IFS / NOAA GFS / DWD ICON) */}
-            <div className="col-span-2 sm:col-span-1 xl:col-span-2">
+            {/* 2. Free Upper-Air Wind Model Selector (Open-Meteo ECMWF IFS / NOAA GFS / DWD ICON) */}
+            <div className="col-span-2 sm:col-span-2 xl:col-span-3">
               <label
                 htmlFor="select-wind-model"
                 className="block text-[11px] font-semibold text-emerald-900 mb-1.5 truncate"
@@ -1457,6 +1463,10 @@ export default function App() {
               waypoints={waypoints}
               legs={navLogSummary.legs}
               selectedAltitudeFt={config.selectedAltitudeFt}
+              departureDate={config.departureDate}
+              airborneTime={config.airborneTime}
+              onDepartureDateChange={handleDepartureDateChange}
+              onDepartureTimeChange={handleDepartureTimeChange}
               routeTrackMode={config.routeTrackMode || 'straight'}
               globalTrackOverrideDeg={config.globalTrackOverrideDeg}
               onChangeGlobalTrackOverride={(val) =>
@@ -1471,6 +1481,7 @@ export default function App() {
                 handleAddWaypointFromMap(lat, lng, name, explicitFraction)
               }
               onGenerateEvenWaypoints={handleGenerateEvenWaypoints}
+              onApplyWaypointsByDistance={handleApplyWaypointsByDistance}
               onUpdateWaypoint={handleUpdateWaypoint}
               onUpdateWaypointCoord={handleUpdateWaypointCoord}
               onAdjustWaypointLeg={handleAdjustWaypointLeg}

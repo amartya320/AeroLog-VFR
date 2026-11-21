@@ -18,9 +18,15 @@ import {
   Check,
   Navigation,
   Ruler,
+  Plus,
+  X,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 import {
   ComputedLeg,
+  DistanceWaypointInputMode,
+  DistanceWaypointSpec,
   RouteTrackMode,
   Waypoint,
   calculateDistanceNm,
@@ -42,6 +48,10 @@ interface WaypointManagerProps {
   waypoints: Waypoint[];
   legs: ComputedLeg[];
   selectedAltitudeFt: number;
+  departureDate: string;
+  airborneTime: string;
+  onDepartureDateChange: (date: string) => void;
+  onDepartureTimeChange: (time: string) => void;
   routeTrackMode: RouteTrackMode;
   globalTrackOverrideDeg: number | null;
   onChangeGlobalTrackOverride: (trackDeg: number | null) => void;
@@ -63,6 +73,11 @@ interface WaypointManagerProps {
     explicitFraction?: number
   ) => void;
   onGenerateEvenWaypoints: (count: number) => void;
+  onApplyWaypointsByDistance: (
+    specs: DistanceWaypointSpec[],
+    inputMode: DistanceWaypointInputMode,
+    applyMode: 'replace' | 'insert'
+  ) => void;
   onUpdateWaypoint: (id: string, partial: Partial<Waypoint>) => void;
   onUpdateWaypointCoord: (id: string, lat: number, lng: number) => void;
   onAdjustWaypointLeg: (
@@ -87,14 +102,19 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
   waypoints,
   legs,
   selectedAltitudeFt,
+  departureDate,
+  airborneTime,
+  onDepartureDateChange,
+  onDepartureTimeChange,
   routeTrackMode,
   globalTrackOverrideDeg,
   onChangeGlobalTrackOverride,
-  roundOffValues = false,
+  roundOffValues = true,
   savedRoutes,
   activeSavedRouteId,
   onChangeRouteTrackMode,
   onGenerateEvenWaypoints,
+  onApplyWaypointsByDistance,
   onUpdateWaypoint,
   onUpdateWaypointCoord,
   onAdjustWaypointLeg,
@@ -115,6 +135,15 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
   const [showSavePanel, setShowSavePanel] = useState<boolean>(false);
   const [saveRouteName, setSaveRouteName] = useState<string>('');
   const [showSavedDrawer, setShowSavedDrawer] = useState<boolean>(true);
+  const [showDistanceBuilder, setShowDistanceBuilder] = useState<boolean>(false);
+  const [distanceInputMode, setDistanceInputMode] =
+    useState<DistanceWaypointInputMode>('leg');
+  const [distanceRows, setDistanceRows] = useState<
+    Array<{ id: string; name: string; distanceText: string }>
+  >([
+    { id: 'dist-row-1', name: '', distanceText: '' },
+    { id: 'dist-row-2', name: '', distanceText: '' },
+  ]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const depWp = waypoints.length >= 1 ? waypoints[0] : null;
@@ -153,6 +182,120 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
       trackDeg,
     };
   }, [depWp, destWp]);
+
+  // Live computed preview for the Add Waypoints by Distance builder
+  const distanceBuilderPreview = useMemo(() => {
+    const parsedRows = distanceRows.map((row) => {
+      const parsed = parseFloat(row.distanceText);
+      const valid = isFinite(parsed) && parsed > 0;
+      return { ...row, distNum: valid ? Math.round(parsed * 10) / 10 : null };
+    });
+
+    let runningCum = 0;
+    const rowsWithMeta = parsedRows.map((r) => {
+      if (r.distNum === null) {
+        return { ...r, cumNm: null as number | null, legNm: null as number | null };
+      }
+      if (distanceInputMode === 'leg') {
+        runningCum = Math.round((runningCum + r.distNum) * 10) / 10;
+        return { ...r, cumNm: runningCum, legNm: r.distNum };
+      }
+      const prevCum = runningCum;
+      runningCum = Math.max(runningCum, r.distNum);
+      return {
+        ...r,
+        cumNm: r.distNum,
+        legNm: Math.round(Math.max(0.1, r.distNum - prevCum) * 10) / 10,
+      };
+    });
+
+    const validSpecs: DistanceWaypointSpec[] = parsedRows
+      .filter((r) => r.distNum !== null)
+      .map((r) => ({ name: r.name.trim(), distanceNm: r.distNum as number }));
+
+    const maxEnteredCum =
+      distanceInputMode === 'leg'
+        ? validSpecs.reduce((sum, s) => Math.round((sum + s.distanceNm) * 10) / 10, 0)
+        : validSpecs.reduce((max, s) => Math.max(max, s.distanceNm), 0);
+
+    const directTotalNm = straightLineSummary?.totalDistNm ?? 0;
+    const remainingToDestNm = Math.round((directTotalNm - maxEnteredCum) * 10) / 10;
+
+    return {
+      rowsWithMeta,
+      validSpecs,
+      maxEnteredCum,
+      directTotalNm,
+      remainingToDestNm,
+    };
+  }, [distanceRows, distanceInputMode, straightLineSummary]);
+
+  const handleOpenDistanceBuilder = () => {
+    setShowDistanceBuilder((prev) => {
+      const next = !prev;
+      if (next && distanceRows.every((r) => r.distanceText === '' && r.name === '')) {
+        setDistanceRows([
+          { id: `dist-row-${Date.now()}-1`, name: '', distanceText: '' },
+          { id: `dist-row-${Date.now()}-2`, name: '', distanceText: '' },
+        ]);
+      }
+      return next;
+    });
+  };
+
+  const handleAddDistanceRow = () => {
+    setDistanceRows((prev) => [
+      ...prev,
+      { id: `dist-row-${Date.now()}-${prev.length + 1}`, name: '', distanceText: '' },
+    ]);
+  };
+
+  const handleUpdateDistanceRow = (
+    rowId: string,
+    field: 'name' | 'distanceText',
+    value: string
+  ) => {
+    setDistanceRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId
+          ? {
+              ...row,
+              [field]: field === 'name' ? value.toUpperCase() : value,
+            }
+          : row
+      )
+    );
+  };
+
+  const handleRemoveDistanceRow = (rowId: string) => {
+    setDistanceRows((prev) =>
+      prev.length <= 1 ? prev : prev.filter((row) => row.id !== rowId)
+    );
+  };
+
+  const handleSubmitDistanceWaypoints = (applyMode: 'replace' | 'insert') => {
+    if (!depWp || !destWp || distanceBuilderPreview.validSpecs.length === 0) return;
+    const count = distanceBuilderPreview.validSpecs.length;
+    onApplyWaypointsByDistance(
+      distanceBuilderPreview.validSpecs,
+      distanceInputMode,
+      applyMode
+    );
+    setShowDistanceBuilder(false);
+    setDistanceRows([
+      { id: `dist-row-${Date.now()}-1`, name: '', distanceText: '' },
+      { id: `dist-row-${Date.now()}-2`, name: '', distanceText: '' },
+    ]);
+    setStatusMessage(
+      applyMode === 'replace'
+        ? `Placed ${count} waypoint${count > 1 ? 's' : ''} between ${depWp.name} and ${destWp.name} by ${
+            distanceInputMode === 'leg' ? 'leg distance' : 'distance from DEP'
+          }.`
+        : `Inserted ${count} waypoint${count > 1 ? 's' : ''} along ${depWp.name} → ${destWp.name} by ${
+            distanceInputMode === 'leg' ? 'leg distance' : 'distance from DEP'
+          }.`
+    );
+  };
 
   const handleOpenSavePanel = () => {
     const defaultName =
@@ -497,105 +640,144 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
           </div>
         )}
 
-        {/* Track Mode & Fixed Track Bar */}
-        <div className="aerolog-subcard flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 bg-slate-50/90 border border-slate-200/80 rounded-xl p-2.5">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto sm:shrink-0">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 whitespace-nowrap shrink-0">
-                Track Mode:
-              </span>
-              <div
-                role="group"
-                aria-label="Route Track Mode"
-                className="aerolog-segmented grid grid-cols-2 sm:inline-flex w-full sm:w-auto bg-slate-200/70 p-1 rounded-xl gap-0.5"
-              >
-                <button
-                  type="button"
-                  aria-pressed={routeTrackMode === 'straight'}
-                  onClick={() => onChangeRouteTrackMode('straight')}
-                  className={`justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all whitespace-nowrap ${
-                    routeTrackMode === 'straight'
-                      ? 'bg-sky-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:text-slate-900'
-                  }`}
+        {/* Track Mode, Fixed Track & Departure Date/Time Bar */}
+        <div className="aerolog-subcard flex flex-col gap-2 bg-slate-50/90 border border-slate-200/80 rounded-xl p-2.5">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 w-full xl:w-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto sm:shrink-0">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 whitespace-nowrap shrink-0">
+                  Track Mode:
+                </span>
+                <div
+                  role="group"
+                  aria-label="Route Track Mode"
+                  className="aerolog-segmented grid grid-cols-2 sm:inline-flex w-full sm:w-auto bg-slate-200/70 p-1 rounded-xl gap-0.5"
                 >
-                  <GitCommitHorizontal className="w-3.5 h-3.5 shrink-0" />
-                  <span className="sm:hidden">Straight-Line</span>
-                  <span className="hidden sm:inline">Straight-Line Track</span>
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={routeTrackMode === 'freeform'}
-                  onClick={() => onChangeRouteTrackMode('freeform')}
-                  className={`justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all whitespace-nowrap ${
-                    routeTrackMode === 'freeform'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:text-slate-900'
-                  }`}
+                  <button
+                    type="button"
+                    aria-pressed={routeTrackMode === 'straight'}
+                    onClick={() => onChangeRouteTrackMode('straight')}
+                    className={`justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                      routeTrackMode === 'straight'
+                        ? 'bg-sky-600 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-900'
+                    }`}
+                  >
+                    <GitCommitHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span className="sm:hidden">Straight-Line</span>
+                    <span className="hidden sm:inline">Straight-Line Track</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={routeTrackMode === 'freeform'}
+                    onClick={() => onChangeRouteTrackMode('freeform')}
+                    className={`justify-center px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                      routeTrackMode === 'freeform'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-900'
+                    }`}
+                  >
+                    <Waypoints className="w-3.5 h-3.5 shrink-0" />
+                    Freeform
+                  </button>
+                </div>
+              </div>
+
+              <div className="hidden sm:block w-px h-6 bg-slate-200/90 shrink-0" />
+
+              {/* Whole-Flight Fixed Track Override (Optional) */}
+              <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-200/70">
+                <label
+                  htmlFor="input-global-track"
+                  className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1 whitespace-nowrap shrink-0"
+                  title="Leave blank to auto-calculate track between each map waypoint, or enter a fixed track (0-359°) for the whole flight"
                 >
-                  <Waypoints className="w-3.5 h-3.5 shrink-0" />
-                  Freeform
-                </button>
+                  <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>Fixed Track (°T):</span>
+                </label>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <div
+                    className={`flex items-center rounded-lg border px-2 py-1 transition-all ${
+                      globalTrackOverrideDeg !== null
+                        ? 'bg-amber-50 border-amber-300'
+                        : 'bg-white border-slate-200/90 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/15'
+                    }`}
+                  >
+                    <input
+                      id="input-global-track"
+                      type="number"
+                      min={0}
+                      max={359}
+                      placeholder="Auto Map"
+                      value={
+                        globalTrackOverrideDeg !== null ? globalTrackOverrideDeg : ''
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        onChangeGlobalTrackOverride(
+                          val === '' ? null : Math.max(0, Math.min(359, Number(val)))
+                        );
+                      }}
+                      className="w-20 text-xs font-mono font-bold bg-transparent text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:outline-none text-right"
+                    />
+                    <span className="text-[11px] font-mono text-slate-400 ml-1 select-none">
+                      °T
+                    </span>
+                  </div>
+                  {globalTrackOverrideDeg !== null && (
+                    <button
+                      type="button"
+                      onClick={() => onChangeGlobalTrackOverride(null)}
+                      title="Clear Fixed Track and return to Auto Map track"
+                      aria-label="Clear Fixed Track"
+                      className="p-1 text-amber-700 hover:text-amber-950 hover:bg-amber-100 rounded-lg border border-amber-200/90 transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="hidden sm:block w-px h-6 bg-slate-200/90 shrink-0" />
-
-            {/* Whole-Flight Fixed Track Override (Optional) */}
-            <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-200/70">
-              <label
-                htmlFor="input-global-track"
-                className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1 whitespace-nowrap shrink-0"
-                title="Leave blank to auto-calculate track between each map waypoint, or enter a fixed track (0-359°) for the whole flight"
-              >
-                <Navigation className="w-3 h-3 text-sky-600 shrink-0" />
-                <span>Fixed Track (°T):</span>
-              </label>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <div
-                  className={`flex items-center rounded-lg border px-2 py-1 transition-all ${
-                    globalTrackOverrideDeg !== null
-                      ? 'bg-amber-50 border-amber-300'
-                      : 'bg-white border-slate-200/90 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/15'
-                  }`}
+            {/* Estimated Departure Date & Time (IST) */}
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full xl:w-auto pt-1.5 xl:pt-0 border-t xl:border-t-0 border-slate-200/70 shrink-0">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5 min-w-0">
+                <label
+                  htmlFor="input-departure-date"
+                  className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-sky-900 flex items-center gap-1 whitespace-nowrap shrink-0"
                 >
-                  <input
-                    id="input-global-track"
-                    type="number"
-                    min={0}
-                    max={359}
-                    placeholder="Auto Map"
-                    value={
-                      globalTrackOverrideDeg !== null ? globalTrackOverrideDeg : ''
-                    }
-                    onChange={(e) => {
-                      const val = e.target.value.trim();
-                      onChangeGlobalTrackOverride(
-                        val === '' ? null : Math.max(0, Math.min(359, Number(val)))
-                      );
-                    }}
-                    className="w-20 text-xs font-mono font-bold bg-transparent text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:outline-none text-right"
-                  />
-                  <span className="text-[11px] font-mono text-slate-400 ml-1 select-none">
-                    °T
-                  </span>
-                </div>
-                {globalTrackOverrideDeg !== null && (
-                  <button
-                    type="button"
-                    onClick={() => onChangeGlobalTrackOverride(null)}
-                    title="Clear Fixed Track and return to Auto Map track"
-                    aria-label="Clear Fixed Track"
-                    className="p-1 text-amber-700 hover:text-amber-950 hover:bg-amber-100 rounded-lg border border-amber-200/90 transition-colors"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                  </button>
-                )}
+                  <Calendar className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>Dep Date (IST)</span>
+                </label>
+                <input
+                  id="input-departure-date"
+                  type="date"
+                  value={departureDate}
+                  onChange={(e) => onDepartureDateChange(e.target.value)}
+                  className="w-full sm:w-auto px-2 py-1 text-xs font-mono font-bold bg-sky-50/75 border border-sky-200/90 rounded-lg text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-1.5 min-w-0">
+                <label
+                  htmlFor="input-airborne-time"
+                  className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-sky-900 flex items-center gap-1 whitespace-nowrap shrink-0"
+                >
+                  <Clock className="w-3 h-3 text-sky-600 shrink-0" />
+                  <span>Dep Time (IST)</span>
+                </label>
+                <input
+                  id="input-airborne-time"
+                  type="time"
+                  value={airborneTime}
+                  onChange={(e) => onDepartureTimeChange(e.target.value)}
+                  className="w-full sm:w-auto px-2 py-1 text-xs font-mono font-bold bg-sky-50/75 border border-sky-200/90 rounded-lg text-slate-900 focus:bg-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 focus:outline-none transition-all"
+                />
               </div>
             </div>
           </div>
 
-          <div className="text-[11px] font-mono text-slate-600">
+          <div className="text-[11px] font-mono text-slate-600 border-t border-slate-200/60 pt-1.5">
             {globalTrackOverrideDeg !== null ? (
               <span className="text-amber-800 font-semibold">
                 Fixed Track active ({String(globalTrackOverrideDeg).padStart(3, '0')}°T across all unmodified legs)
@@ -661,8 +843,209 @@ export const WaypointManager: React.FC<WaypointManagerProps> = ({
                 {preset.label}
               </button>
             ))}
+
+            <button
+              id="toggle-distance-builder-btn"
+              type="button"
+              disabled={!depWp || !destWp}
+              aria-expanded={showDistanceBuilder}
+              onClick={handleOpenDistanceBuilder}
+              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border flex items-center gap-1 transition-all disabled:opacity-40 shadow-2xs ${
+                showDistanceBuilder
+                  ? 'bg-sky-600 text-white border-sky-600'
+                  : 'bg-sky-50 hover:bg-sky-100 text-sky-900 border-sky-300/90'
+              }`}
+            >
+              <Ruler className="w-3 h-3 shrink-0" />
+              <span>+ By Distance</span>
+            </button>
           </div>
         </div>
+
+        {/* Collapsible Add Waypoints by Distance Builder */}
+        {showDistanceBuilder && depWp && destWp && (
+          <div
+            id="add-by-distance-panel"
+            className="aerolog-subcard animate-slide-down bg-sky-50/75 border border-sky-200/90 rounded-xl p-3 space-y-2.5"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-sky-200/70 pb-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-bold text-sky-950 flex items-center gap-1.5">
+                    <Ruler className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                    Add Waypoints by Distance (DEP → DEST)
+                  </span>
+                  {straightLineSummary && (
+                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-white/90 border border-sky-200 text-sky-800">
+                      {straightLineSummary.totalDistNm} NM · {String(straightLineSummary.trackDeg).padStart(3, '0')}°T
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Enter distances between <strong>{depWp.name}</strong> and{' '}
+                  <strong>{destWp.name}</strong> to place waypoints directly along the track.
+                </p>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Distance Reference Mode"
+                className="aerolog-segmented grid grid-cols-2 sm:inline-flex w-full sm:w-auto bg-white/90 border border-sky-200/80 p-0.5 rounded-lg gap-0.5 shrink-0"
+              >
+                <button
+                  type="button"
+                  aria-pressed={distanceInputMode === 'leg'}
+                  onClick={() => setDistanceInputMode('leg')}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all whitespace-nowrap ${
+                    distanceInputMode === 'leg'
+                      ? 'bg-sky-600 text-white shadow-2xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  Leg Dist (from prev)
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={distanceInputMode === 'cumulative'}
+                  onClick={() => setDistanceInputMode('cumulative')}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition-all whitespace-nowrap ${
+                    distanceInputMode === 'cumulative'
+                      ? 'bg-sky-600 text-white shadow-2xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  Dist from DEP
+                </button>
+              </div>
+            </div>
+
+            {/* Dynamic Waypoint Distance Rows */}
+            <div className="space-y-1.5">
+              {distanceBuilderPreview.rowsWithMeta.map((row, idx) => (
+                <div
+                  key={row.id}
+                  className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2 bg-white/90 border border-sky-200/70 rounded-lg px-2 py-1.5"
+                >
+                  <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200/80 shrink-0">
+                    #{idx + 1}
+                  </span>
+                  <input
+                    type="text"
+                    value={row.name}
+                    aria-label={`Distance waypoint ${idx + 1} name`}
+                    onChange={(e) =>
+                      handleUpdateDistanceRow(row.id, 'name', e.target.value)
+                    }
+                    placeholder={`WPT ${idx + 1} name`}
+                    className="flex-1 min-w-0 px-2 sm:px-2.5 py-1 text-xs font-mono font-semibold bg-slate-50/80 border border-slate-200 rounded-md text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:bg-white focus:border-sky-500 focus:outline-none"
+                  />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <input
+                      type="number"
+                      min={0.1}
+                      step="0.1"
+                      value={row.distanceText}
+                      aria-label={`Distance waypoint ${idx + 1} distance NM`}
+                      onChange={(e) =>
+                        handleUpdateDistanceRow(row.id, 'distanceText', e.target.value)
+                      }
+                      placeholder={
+                        distanceInputMode === 'leg' ? 'Leg NM' : 'From DEP'
+                      }
+                      className="w-18 sm:w-24 px-1.5 sm:px-2 py-1 text-xs font-mono font-bold text-right bg-slate-50/80 border border-slate-200 rounded-md text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 focus:bg-white focus:border-sky-500 focus:outline-none"
+                    />
+                    <span className="text-[11px] font-mono text-slate-500 select-none">
+                      NM
+                    </span>
+                  </div>
+                  {row.cumNm !== null && (
+                    <span className="text-[10px] font-mono text-sky-800 bg-sky-50 border border-sky-200/80 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0">
+                      {distanceInputMode === 'leg'
+                        ? `Cum ${row.cumNm} NM`
+                        : `Leg ${row.legNm} NM`}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={distanceRows.length <= 1}
+                    onClick={() => handleRemoveDistanceRow(row.id)}
+                    aria-label={`Remove distance waypoint row ${idx + 1}`}
+                    title="Remove row"
+                    className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-30 rounded transition-colors shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer: Add Row + Live Summary + Apply Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  id="add-distance-row-btn"
+                  type="button"
+                  onClick={handleAddDistanceRow}
+                  className="px-2.5 py-1 text-[11px] font-semibold bg-white hover:bg-sky-50 text-sky-900 border border-sky-200/90 rounded-lg flex items-center gap-1 transition-all shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  Add Waypoint Row
+                </button>
+
+                {distanceBuilderPreview.validSpecs.length > 0 && (
+                  <span
+                    className={`text-[11px] font-mono ${
+                      distanceBuilderPreview.remainingToDestNm > 0
+                        ? 'text-sky-900'
+                        : 'text-amber-800 font-semibold'
+                    }`}
+                  >
+                    {distanceBuilderPreview.remainingToDestNm > 0
+                      ? `Final leg to ${destWp.name}: ${distanceBuilderPreview.remainingToDestNm} NM`
+                      : `Total ${distanceBuilderPreview.maxEnteredCum} NM exceeds direct ${distanceBuilderPreview.directTotalNm} NM — spaced along track with exact NM`}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto shrink-0">
+                <button
+                  id="apply-distance-replace-btn"
+                  type="button"
+                  disabled={distanceBuilderPreview.validSpecs.length === 0}
+                  onClick={() => handleSubmitDistanceWaypoints('replace')}
+                  className="flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-bold bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white rounded-lg flex items-center gap-1.5 transition-all whitespace-nowrap shadow-2xs"
+                >
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                  {intermediateCount > 0
+                    ? `Replace (${distanceBuilderPreview.validSpecs.length})`
+                    : `Add ${distanceBuilderPreview.validSpecs.length || ''} WPT${
+                        distanceBuilderPreview.validSpecs.length === 1 ? '' : 's'
+                      }`}
+                </button>
+
+                {intermediateCount > 0 && (
+                  <button
+                    id="apply-distance-insert-btn"
+                    type="button"
+                    disabled={distanceBuilderPreview.validSpecs.length === 0}
+                    onClick={() => handleSubmitDistanceWaypoints('insert')}
+                    className="flex-1 sm:flex-initial justify-center px-3 py-1.5 text-xs font-semibold bg-white hover:bg-sky-50 disabled:opacity-40 text-sky-900 border border-sky-300 rounded-lg transition-all whitespace-nowrap shadow-2xs"
+                  >
+                    Insert
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowDistanceBuilder(false)}
+                  className="px-2.5 py-1.5 text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition-all whitespace-nowrap"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {statusMessage && (

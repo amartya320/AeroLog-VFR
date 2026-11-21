@@ -131,7 +131,7 @@ export const PRESET_ROUTES: PresetFlightRoute[] = [
       magneticVariationDeg: -1.0,
       globalTrackOverrideDeg: null,
       customAlternateFuelLiters: null,
-      roundOffValues: false,
+      roundOffValues: true,
       alternate: null,
       alternateFrom: 'DEST',
     },

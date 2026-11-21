@@ -901,6 +901,240 @@ export function reverseWaypointsWithLegs(waypoints: Waypoint[]): Waypoint[] {
   return reversed;
 }
 
+export type DistanceWaypointInputMode = 'leg' | 'cumulative';
+
+export interface DistanceWaypointSpec {
+  name?: string;
+  distanceNm: number;
+}
+
+/**
+ * Build an ordered straight-line route (DEP -> intermediate WPTs -> DEST) by placing
+ * intermediate waypoints along the DEP -> DEST track according to user-specified distances.
+ *
+ * - `mode === 'leg'`: each spec's `distanceNm` is the leg distance from the previous waypoint.
+ * - `mode === 'cumulative'`: each spec's `distanceNm` is total distance from DEP (sorted ascending).
+ *
+ * Keeps DEP and DEST anchored. When cumulative distances fit within the direct DEP -> DEST span,
+ * waypoints are placed at exact NM along the track and the final leg to DEST automatically equals
+ * the remaining distance. When entered distances exceed the direct span, intermediate waypoints
+ * space proportionally along the track while preserving each waypoint's exact `customDistanceNm`.
+ */
+export function buildWaypointsFromDistances(
+  dep: Waypoint,
+  dest: Waypoint,
+  specs: DistanceWaypointSpec[],
+  mode: DistanceWaypointInputMode = 'leg'
+): Waypoint[] {
+  const validSpecs = specs.filter(
+    (s) => typeof s.distanceNm === 'number' && isFinite(s.distanceNm) && s.distanceNm > 0
+  );
+
+  const cleanDep: Waypoint = {
+    ...dep,
+    lineFraction: 0,
+  };
+  const cleanDest: Waypoint = {
+    ...dest,
+    lineFraction: 1,
+  };
+  delete cleanDest.customDistanceNm;
+
+  if (validSpecs.length === 0) {
+    return [cleanDep, cleanDest];
+  }
+
+  const orderedSpecs =
+    mode === 'cumulative'
+      ? [...validSpecs].sort((a, b) => a.distanceNm - b.distanceNm)
+      : validSpecs;
+
+  const planned: Array<{ name: string; legDistNm: number; cumDistNm: number }> = [];
+  let runningCum = 0;
+
+  orderedSpecs.forEach((spec, idx) => {
+    const cleanName = (spec.name || '').trim().toUpperCase() || `WPT ${idx + 1}`;
+    if (mode === 'leg') {
+      const legDistNm = Math.round(spec.distanceNm * 10) / 10;
+      runningCum = Math.round((runningCum + legDistNm) * 10) / 10;
+      planned.push({ name: cleanName, legDistNm, cumDistNm: runningCum });
+    } else {
+      const cumDistNm = Math.round(spec.distanceNm * 10) / 10;
+      const legDistNm = Math.round(Math.max(0.1, cumDistNm - runningCum) * 10) / 10;
+      runningCum = cumDistNm;
+      planned.push({ name: cleanName, legDistNm, cumDistNm });
+    }
+  });
+
+  const geoTotalNm = calculateDistanceNm(dep.lat, dep.lng, dest.lat, dest.lng);
+  const lastCum = planned[planned.length - 1].cumDistNm;
+  const fitsWithinDirectSpan = geoTotalNm >= 0.05 && lastCum < geoTotalNm;
+  const scaleSpanNm = fitsWithinDirectSpan
+    ? geoTotalNm
+    : Math.max(0.1, lastCum + Math.max(1, lastCum * 0.1));
+
+  const minGap = 0.005;
+  const fractions: number[] = [];
+  for (let i = 0; i < planned.length; i++) {
+    let t = Math.max(0.01, Math.min(0.99, planned[i].cumDistNm / scaleSpanNm));
+    if (i > 0 && t <= fractions[i - 1] + minGap) {
+      t = Math.min(0.99 - (planned.length - 1 - i) * minGap, fractions[i - 1] + minGap);
+    }
+    fractions.push(t);
+  }
+
+  const now = Date.now();
+  const intermediates: Waypoint[] = planned.map((item, idx) => {
+    const interp = interpolatePointAlongLine(dep, dest, fractions[idx], 0.01, 0.99);
+    return {
+      id: `wp-dist-${now}-${idx}`,
+      name: item.name,
+      lat: interp.lat,
+      lng: interp.lng,
+      freeformLat: interp.lat,
+      freeformLng: interp.lng,
+      lineFraction: interp.t,
+      customDistanceNm: item.legDistNm,
+      windDir: dep.windDir ?? 270,
+      windSpd: dep.windSpd ?? 15,
+      windSource: 'Fetching...',
+    };
+  });
+
+  return [cleanDep, ...intermediates, cleanDest];
+}
+
+/**
+ * Insert one or more waypoints between existing DEP and DEST at given distances without
+ * removing existing intermediate waypoints.
+ *
+ * - `mode === 'cumulative'`: places each new waypoint at `distanceNm` from DEP and sorts
+ *   all intermediate waypoints cleanly along the DEP -> DEST line.
+ * - `mode === 'leg'`: appends each new waypoint sequentially after the last existing
+ *   intermediate waypoint (or after DEP if none exist) by its specified leg distance.
+ */
+export function insertWaypointsByDistance(
+  waypoints: Waypoint[],
+  specs: DistanceWaypointSpec[],
+  mode: DistanceWaypointInputMode = 'leg'
+): Waypoint[] {
+  if (waypoints.length < 2) return waypoints;
+  const validSpecs = specs.filter(
+    (s) => typeof s.distanceNm === 'number' && isFinite(s.distanceNm) && s.distanceNm > 0
+  );
+  if (validSpecs.length === 0) return waypoints;
+
+  const dep = waypoints[0];
+  const dest = waypoints[waypoints.length - 1];
+  const existingIntermediates = waypoints.slice(1, -1);
+
+  if (existingIntermediates.length === 0) {
+    return buildWaypointsFromDistances(dep, dest, validSpecs, mode);
+  }
+
+  const geoTotalNm = calculateDistanceNm(dep.lat, dep.lng, dest.lat, dest.lng);
+  if (geoTotalNm < 0.05) return waypoints;
+
+  const projectedExisting = existingIntermediates.map((wp) => {
+    const proj = projectPointOntoStraightLine(dep, dest, wp.lat, wp.lng, 0.01, 0.99);
+    return {
+      wp: { ...wp, lineFraction: proj.t },
+      cumDistNm: proj.distanceFromDepNm,
+      t: proj.t,
+    };
+  });
+
+  const now = Date.now();
+  const existingCount = existingIntermediates.length;
+
+  if (mode === 'cumulative') {
+    const newEntries = validSpecs.map((spec, idx) => {
+      const cumDistNm = Math.round(spec.distanceNm * 10) / 10;
+      const t = Math.max(0.01, Math.min(0.99, cumDistNm / geoTotalNm));
+      const interp = interpolatePointAlongLine(dep, dest, t, 0.01, 0.99);
+      const cleanName =
+        (spec.name || '').trim().toUpperCase() || `WPT ${existingCount + idx + 1}`;
+      return {
+        wp: {
+          id: `wp-dist-${now}-${idx}`,
+          name: cleanName,
+          lat: interp.lat,
+          lng: interp.lng,
+          freeformLat: interp.lat,
+          freeformLng: interp.lng,
+          lineFraction: interp.t,
+          windDir: dep.windDir ?? 270,
+          windSpd: dep.windSpd ?? 15,
+          windSource: 'Fetching...',
+        } as Waypoint,
+        cumDistNm,
+        t: interp.t,
+      };
+    });
+
+    const merged = [...projectedExisting, ...newEntries].sort((a, b) => a.t - b.t);
+    const cleanDest = { ...dest, lineFraction: 1 };
+    delete cleanDest.customDistanceNm;
+    return [{ ...dep, lineFraction: 0 }, ...merged.map((m) => m.wp), cleanDest];
+  }
+
+  // mode === 'leg': append sequentially after the last existing intermediate waypoint
+  let runningCum = projectedExisting[projectedExisting.length - 1].cumDistNm;
+  const appended: Array<{ wp: Waypoint; cumDistNm: number }> = [];
+  validSpecs.forEach((spec, idx) => {
+    const legDistNm = Math.round(spec.distanceNm * 10) / 10;
+    runningCum = Math.round((runningCum + legDistNm) * 10) / 10;
+    const cleanName =
+      (spec.name || '').trim().toUpperCase() || `WPT ${existingCount + idx + 1}`;
+    appended.push({
+      cumDistNm: runningCum,
+      wp: {
+        id: `wp-dist-${now}-${idx}`,
+        name: cleanName,
+        lat: dep.lat,
+        lng: dep.lng,
+        customDistanceNm: legDistNm,
+        windDir: dep.windDir ?? 270,
+        windSpd: dep.windSpd ?? 15,
+        windSource: 'Fetching...',
+      },
+    });
+  });
+
+  const allIntermediates = [
+    ...projectedExisting.map((p) => ({ wp: p.wp, cumDistNm: p.cumDistNm })),
+    ...appended,
+  ];
+  const lastCum = allIntermediates[allIntermediates.length - 1].cumDistNm;
+  const fitsWithinSpan = lastCum < geoTotalNm;
+  const scaleSpan = fitsWithinSpan
+    ? geoTotalNm
+    : Math.max(0.1, lastCum + Math.max(1, lastCum * 0.1));
+
+  const minGap = 0.005;
+  let prevT = 0;
+  const positioned = allIntermediates.map((entry, idx) => {
+    let t = Math.max(0.01, Math.min(0.99, entry.cumDistNm / scaleSpan));
+    if (idx > 0 && t <= prevT + minGap) {
+      t = Math.min(0.99 - (allIntermediates.length - 1 - idx) * minGap, prevT + minGap);
+    }
+    prevT = t;
+    const interp = interpolatePointAlongLine(dep, dest, t, 0.01, 0.99);
+    return {
+      ...entry.wp,
+      lat: interp.lat,
+      lng: interp.lng,
+      freeformLat: entry.wp.freeformLat ?? interp.lat,
+      freeformLng: entry.wp.freeformLng ?? interp.lng,
+      lineFraction: interp.t,
+    };
+  });
+
+  const cleanDest = { ...dest, lineFraction: 1 };
+  delete cleanDest.customDistanceNm;
+  return [{ ...dep, lineFraction: 0 }, ...positioned, cleanDest];
+}
+
 export interface WindTriangleResult {
   wcaDeg: number; // Wind Correction Angle in degrees (-left, +right)
   trueHeadingDeg: number; // True Heading (0-359)

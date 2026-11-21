@@ -807,3 +807,111 @@ test('savedRoutes persists routes with modified track/distance and KML export/im
   assert.equal(afterDelete.length, 0);
 });
 
+test('buildWaypointsFromDistances and insertWaypointsByDistance place waypoints accurately along DEP->DEST and PRESET_ROUTES defaults roundOffValues to true', async () => {
+  const { buildWaypointsFromDistances, insertWaypointsByDistance } = await import(
+    './navlogMath'
+  );
+  const { PRESET_ROUTES } = await import('./presetRoutes');
+
+  // Default route should have roundOffValues enabled by default
+  assert.equal(PRESET_ROUTES[0].config.roundOffValues, true);
+
+  const dep: Waypoint = {
+    id: 'dep',
+    name: 'VOGB',
+    lat: 17.3056,
+    lng: 76.9531,
+    windDir: 50,
+    windSpd: 12,
+  };
+  const dest: Waypoint = {
+    id: 'dest',
+    name: 'VASL',
+    lat: 17.628,
+    lng: 75.9348,
+    windDir: 70,
+    windSpd: 10,
+  };
+
+  // 1. Leg distance mode: 10 NM, 15 NM, 20 NM (cumulative 10, 25, 45 NM inside ~61.4 NM span)
+  const byLegs = buildWaypointsFromDistances(
+    dep,
+    dest,
+    [
+      { name: 'SAVALGI', distanceNm: 10 },
+      { name: 'ALAND', distanceNm: 15 },
+      { name: '', distanceNm: 20 },
+    ],
+    'leg'
+  );
+  assert.equal(byLegs.length, 5);
+  assert.equal(byLegs[0].name, 'VOGB');
+  assert.equal(byLegs[1].name, 'SAVALGI');
+  assert.equal(byLegs[2].name, 'ALAND');
+  assert.equal(byLegs[3].name, 'WPT 3');
+  assert.equal(byLegs[4].name, 'VASL');
+
+  // Geodesic distances from DEP should match 10, 25, 45 NM within 0.2 NM
+  const d1 = calculateDistanceNm(dep.lat, dep.lng, byLegs[1].lat, byLegs[1].lng);
+  const d2 = calculateDistanceNm(dep.lat, dep.lng, byLegs[2].lat, byLegs[2].lng);
+  const d3 = calculateDistanceNm(dep.lat, dep.lng, byLegs[3].lat, byLegs[3].lng);
+  assert.ok(Math.abs(d1 - 10) < 0.2, `Expected ~10 NM, got ${d1}`);
+  assert.ok(Math.abs(d2 - 25) < 0.2, `Expected ~25 NM, got ${d2}`);
+  assert.ok(Math.abs(d3 - 45) < 0.2, `Expected ~45 NM, got ${d3}`);
+  assert.equal(byLegs[1].customDistanceNm, 10);
+  assert.equal(byLegs[2].customDistanceNm, 15);
+  assert.equal(byLegs[3].customDistanceNm, 20);
+  assert.equal(byLegs[4].customDistanceNm, undefined);
+
+  // 2. Cumulative mode (unsorted input gets sorted cleanly along DEP->DEST)
+  const byCum = buildWaypointsFromDistances(
+    dep,
+    dest,
+    [
+      { name: 'FARPT', distanceNm: 40 },
+      { name: 'NEARPT', distanceNm: 12 },
+    ],
+    'cumulative'
+  );
+  assert.equal(byCum.length, 4);
+  assert.equal(byCum[1].name, 'NEARPT');
+  assert.equal(byCum[1].customDistanceNm, 12);
+  assert.equal(byCum[2].name, 'FARPT');
+  assert.equal(byCum[2].customDistanceNm, 28);
+
+  // 3. Insert mode (cumulative) preserves existing intermediate waypoints and sorts cleanly
+  const afterInsert = insertWaypointsByDistance(
+    byCum,
+    [{ name: 'MIDPT', distanceNm: 25 }],
+    'cumulative'
+  );
+  assert.equal(afterInsert.length, 5);
+  assert.equal(afterInsert[1].name, 'NEARPT');
+  assert.equal(afterInsert[2].name, 'MIDPT');
+  assert.equal(afterInsert[3].name, 'FARPT');
+  const dMid = calculateDistanceNm(
+    dep.lat,
+    dep.lng,
+    afterInsert[2].lat,
+    afterInsert[2].lng
+  );
+  assert.ok(Math.abs(dMid - 25) < 0.2, `Expected MIDPT ~25 NM, got ${dMid}`);
+
+  // 4. Exceeding direct span spaces waypoints proportionally while preserving exact customDistanceNm
+  const overspan = buildWaypointsFromDistances(
+    dep,
+    dest,
+    [
+      { name: 'A', distanceNm: 35 },
+      { name: 'B', distanceNm: 40 },
+    ],
+    'leg'
+  );
+  assert.equal(overspan.length, 4);
+  assert.equal(overspan[1].customDistanceNm, 35);
+  assert.equal(overspan[2].customDistanceNm, 40);
+  assert.ok((overspan[1].lineFraction ?? 0) < (overspan[2].lineFraction ?? 0));
+  assert.ok((overspan[2].lineFraction ?? 1) < 1);
+});
+
+
